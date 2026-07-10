@@ -1,0 +1,5 @@
+/* App-level overrides are in index.css */
+
+.app-container {
+  width: 100%;
+}

@@ -1,0 +1,496 @@
+/* auth.css */
+.auth-page {
+  min-height: 100vh;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  display: flex;
+  flex-direction: column;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.landing-main {
+  flex-grow: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1.5rem;
+  overflow: hidden;
+}
+
+.landing-splash-page {
+  background: #f39200;
+}
+
+.splash-main {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(255, 221, 168, 0.3), transparent 26%),
+    linear-gradient(180deg, #f6a11a 0%, #ef8f00 48%, #ef9206 100%);
+}
+
+.landing-splash-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(243, 146, 0, 0.88), rgba(232, 135, 0, 0.9)),
+    url("/icons/icons/background-light.png") center/cover no-repeat;
+  background-blend-mode: soft-light;
+  opacity: 0.9;
+  transform: scale(1.06);
+}
+
+.landing-splash-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 34%, rgba(255, 255, 255, 0.34), transparent 14%),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.12), transparent 24%, rgba(128, 61, 0, 0.12) 72%, rgba(75, 34, 0, 0.18));
+}
+
+.landing-splash-shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2.25rem 0;
+}
+
+.splash-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.15rem;
+  padding: 2.2rem 1.35rem 2.8rem;
+  animation: slideUpFade 0.6s ease-out forwards;
+}
+
+.splash-kicker {
+  margin: 0;
+  font-family: 'Poppins', 'Segoe UI', sans-serif;
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.16);
+}
+
+.splash-brand-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.15rem;
+}
+
+.splash-brand-icon-wrap {
+  width: min(49vw, 206px);
+  height: min(49vw, 206px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 247, 233, 0.8));
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    0 22px 44px rgba(122, 61, 0, 0.16),
+    inset 0 -14px 24px rgba(243, 146, 0, 0.08);
+}
+
+.splash-brand-icon {
+  width: min(33vw, 142px);
+  height: min(33vw, 142px);
+  object-fit: contain;
+  filter: drop-shadow(0 12px 20px rgba(243, 146, 0, 0.2));
+}
+
+.splash-brand-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.splash-brand-text h1,
+.splash-brand-text h2 {
+  margin: 0;
+  font-family: 'Poppins', 'Segoe UI', sans-serif;
+  text-transform: uppercase;
+}
+
+.splash-brand-text h1 {
+  font-size: clamp(2.85rem, 9vw, 4.4rem);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  color: #ffffff;
+  text-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+}
+
+.splash-brand-text h2 {
+  font-size: clamp(1.45rem, 4.8vw, 2.3rem);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.96);
+  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+}
+
+.hero-btn {
+  padding: 1rem 1.75rem;
+  background: rgba(255, 255, 255, 0.96);
+  border: none;
+  border-radius: 999px;
+  color: #c96c00;
+  font-family: 'Poppins', 'Segoe UI', sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 0 18px 34px rgba(116, 59, 0, 0.22);
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.hero-btn:hover {
+  transform: translateY(-2px);
+  background: #ffffff;
+  color: #a95a00;
+  box-shadow: 0 22px 40px rgba(116, 59, 0, 0.26);
+}
+
+.splash-login-btn {
+  min-width: 210px;
+  min-height: 54px;
+  margin-top: 0.2rem;
+}
+
+.splash-copy-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-width: 390px;
+  margin-top: 0.1rem;
+}
+
+.splash-copy {
+  margin: 0;
+  font-family: 'Poppins', 'Segoe UI', sans-serif;
+  font-size: 0.98rem;
+  line-height: 1.8;
+  font-weight: 500;
+  color: rgba(255, 250, 240, 0.96);
+  text-shadow: 0 4px 18px rgba(89, 43, 0, 0.18);
+}
+
+.splash-copy.secondary {
+  color: rgba(255, 242, 224, 0.92);
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+/* Login Page Styles */
+.login-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--bg-main) 0%, var(--primary-tint) 100%);
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  position: relative;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow: hidden;
+}
+
+.login-container::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: -10%;
+  width: 50%;
+  height: 50%;
+  background: var(--primary-glow);
+  filter: blur(100px);
+  border-radius: 50%;
+  z-index: 0;
+}
+
+.login-container::after {
+  content: '';
+  position: absolute;
+  bottom: -20%;
+  right: -10%;
+  width: 50%;
+  height: 50%;
+  background: rgba(14, 165, 233, 0.15); /* Accent glow */
+  filter: blur(100px);
+  border-radius: 50%;
+  z-index: 0;
+}
+
+.back-btn {
+  position: absolute;
+  top: 2rem; left: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  width: auto;
+  height: 40px;
+  border-radius: 100px;
+  border: 1px solid var(--border-strong, rgba(255,255,255,0.1));
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  z-index: 2;
+}
+
+.back-btn span {
+  display: inline;
+}
+
+.back-btn:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-main);
+  border-color: var(--text-muted);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg-card);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 3rem 2.5rem;
+  box-shadow: var(--shadow-deep);
+  animation: zoomIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  z-index: 1;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.login-icon-wrapper {
+  display: inline-flex;
+  color: var(--primary);
+  margin-bottom: 1rem;
+  background: var(--primary-tint);
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+}
+
+.login-brand-icon {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.login-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--text-main);
+  letter-spacing: -0.01em;
+}
+
+.login-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.login-error {
+  background: rgba(192, 69, 58, 0.1); 
+  border: 1px solid rgba(192, 69, 58, 0.2);
+  color: var(--danger);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
+  margin-bottom: 1.25rem;
+  
+}
+
+.form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.4rem;
+}
+
+.input-wrapper {
+  position: relative;
+}
+
+.input-icon {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 0;
+  padding-left: 1rem;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.input-icon svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+.auth-input {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  transition: var(--transition);
+  outline: none;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+}
+
+.auth-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-tint);
+}
+
+.auth-input::placeholder {
+  color: var(--text-muted);
+}
+
+.submit-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  transition: var(--transition);
+  margin-top: 1.5rem;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: var(--primary-light);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
+}
+
+.submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes zoomIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 640px) {
+  .landing-main {
+    padding: 0.8rem;
+  }
+
+  .landing-splash-shell {
+    max-width: 420px;
+    min-height: 100vh;
+    padding: 1rem 0;
+  }
+
+  .splash-content {
+    gap: 1rem;
+    padding: 1.1rem 1rem 2.2rem;
+  }
+
+  .splash-kicker {
+    font-size: 0.84rem;
+    letter-spacing: 0.26em;
+  }
+
+  .splash-brand-icon-wrap {
+    width: min(48vw, 170px);
+    height: min(48vw, 170px);
+    border-radius: 36px;
+  }
+
+  .splash-brand-icon {
+    width: min(31vw, 118px);
+    height: min(31vw, 118px);
+  }
+
+  .splash-brand-text h1 {
+    font-size: clamp(2.5rem, 11vw, 3.45rem);
+  }
+
+  .splash-brand-text h2 {
+    font-size: clamp(1.25rem, 5.4vw, 1.8rem);
+  }
+
+  .splash-login-btn {
+    min-width: 100%;
+    max-width: 280px;
+  }
+
+  .splash-copy-block {
+    max-width: 310px;
+  }
+
+  .splash-copy {
+    font-size: 0.89rem;
+    line-height: 1.7;
+  }
+
+  .splash-copy.secondary {
+    font-size: 0.84rem;
+  }
+}
