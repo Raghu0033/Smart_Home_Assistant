@@ -11,12 +11,14 @@ import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
 import connectDB from './infrastructure/mongodb/db.js';
 import { connectMQTT } from './integrations/mqtt/mqtt.js';
 import { initSocket } from './core/websocket/socketService.js';
 import { startScheduler } from './modules/automations/schedulerService.js';
 import smarthomeRoutes from './modules/homes/smarthome.routes.js';
 import automationRoutes from './modules/automations/automations.routes.js';
+import switchOffPresetsRoutes from './modules/automations/switchOffPresets.routes.js';
 import Device from './modules/devices/Device.js';
 import devicesRoutes from './modules/devices/devices.routes.js';
 import Room from './modules/rooms/Room.js';
@@ -29,7 +31,8 @@ import { connectHomeAssistant } from './integrations/homeassistant/ha-client.js'
 
 import authRoutes from './modules/users/auth.routes.js';
 import authMiddleware from './core/middleware/auth.middleware.js';
-import User from './modules/users/User.js';
+import { requireAdultApproval, requirePermission } from './core/middleware/auth.middleware.js';
+import User, { HOME_PERMISSIONS } from './modules/users/User.js';
 
 
 dotenv.config();
@@ -39,6 +42,25 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
   path: '/socket.io/'
+});
+app.set('io', io);
+
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    const secret = process.env.JWT_SECRET || 'fallback_secret_for_development_only';
+    const decoded = jwt.verify(token, secret);
+    const user = await User.findById(decoded.user.id);
+    if (!user) return next(new Error('Profile not found'));
+    socket.profile = user.toProfileJSON();
+    if (user.role !== 'admin' && !user.allRoomsAccess) {
+      const permittedRooms = await Room.find({ _id: { $in: user.allowedRoomIds } }).select('name');
+      socket.profile.allowedRoomNames = permittedRooms.map(room => room.name);
+    }
+    next();
+  } catch {
+    next(new Error('Authentication required'));
+  }
 });
 
 // Middleware
@@ -89,12 +111,13 @@ app.use('/api/hls', async (req, res) => {
 });
 
 app.use('/', smarthomeRoutes);
-app.use('/api/automations', authMiddleware, automationRoutes);
-app.use('/api/devices', authMiddleware, devicesRoutes);
-app.use('/api/rooms', authMiddleware, roomsRoutes);
+app.use('/api/automations', authMiddleware, requireAdultApproval('automations'), requirePermission('scenes'), automationRoutes);
+app.use('/api/switch-off-presets', authMiddleware, requireAdultApproval('automations'), requirePermission('devices'), switchOffPresetsRoutes);
+app.use('/api/devices', authMiddleware, requireAdultApproval('devices'), requirePermission('devices'), devicesRoutes);
+app.use('/api/rooms', authMiddleware, requireAdultApproval('rooms'), requirePermission('dashboard'), roomsRoutes);
 app.use('/google', googleSmartHomeRoutes);
-app.use('/api/sensors', authMiddleware, sensorsRoutes);
-app.use('/api/cameras', camerasRoutes);
+app.use('/api/sensors', authMiddleware, requireAdultApproval('sensors'), requirePermission('sensors'), sensorsRoutes);
+app.use('/api/cameras', authMiddleware, requirePermission('surveillance'), camerasRoutes);
 
 // Image proxy for Home Assistant authenticated media
 app.get('/api/ha/image', async (req, res) => {
@@ -144,11 +167,19 @@ const startServer = async () => {
   const existingUser = await User.findOne({ username: 'admin' });
   if (!existingUser) {
     await User.create({
+      name: 'Admin',
       username: 'admin',
-      phone: '1234567890',
-      password: 'admin123'
+      password: 'admin123',
+      role: 'admin',
+      accountType: 'adult',
+      permissions: HOME_PERMISSIONS
     });
     console.log('🌱 Seeded default user: admin');
+  } else if (existingUser.role !== 'admin') {
+    existingUser.role = 'admin';
+    existingUser.accountType = 'adult';
+    existingUser.name = existingUser.name || 'Admin';
+    await existingUser.save();
   }
 
   // 2. Seed Default Rooms if needed

@@ -20,6 +20,13 @@ const ICONS = [
 const EMPTY_COND = { sensor: 'temperature', operator: 'gt', value: 30, startTime: '', endTime: '' };
 const EMPTY_ACTION = { targetDeviceId: '', targetDevice: '', command: 'turn_on', subDeviceIndex: null, params: {} };
 
+const InfoTip = ({ text }) => (
+  <span className="scene-info-tip">
+    <button type="button" className="scene-info-button" aria-label="Show information">i</button>
+    <span className="scene-info-popup" role="tooltip">{text}</span>
+  </span>
+);
+
 const DEVICE_COMMANDS = {
   light: ['turn_on', 'turn_off', 'set_brightness', 'set_color', 'set_effect'],
   rgbw: ['turn_on', 'turn_off', 'set_brightness', 'set_color'],
@@ -28,6 +35,8 @@ const DEVICE_COMMANDS = {
   plug: ['turn_on', 'turn_off'],
   curtain: ['turn_on', 'turn_off'],
   'touch-panel': ['turn_on', 'turn_off', 'set_speed'],
+  'retro-fit': ['turn_on', 'turn_off', 'set_speed'],
+  'water-tank': ['turn_on', 'turn_off'],
   media_player: ['play_media', 'media_play', 'media_pause', 'volume_up', 'volume_down', 'turn_off'],
   default: ['turn_on', 'turn_off']
 };
@@ -36,7 +45,7 @@ const getDeviceCommandType = (device, subDevice) => {
   if (subDevice?.type === 'fan') return 'fan';
   if (subDevice?.type === 'switch') return 'switch';
   if (!device) return 'default';
-  if (device.type === 'touch-panel' || device.deviceId?.startsWith('BSQ')) return 'touch-panel';
+  if (device.type === 'touch-panel' || device.type === 'retro-fit' || /^BS(?:Q|4)/i.test(device.deviceId || '')) return 'touch-panel';
   return device.type || 'default';
 };
 
@@ -128,6 +137,7 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
   const findSceneRoom = useCallback((roomName) => {
     if (!roomName) return null;
     if (roomName === 'Global') return { name: 'Global', icon: 'ðŸŒ' };
+    if (roomName === 'Water Tanks') return { name: 'Water Tanks', icon: '💧' };
     return (Array.isArray(rooms) ? rooms : []).find((room) => room.name === roomName) || null;
   }, [rooms]);
 
@@ -323,14 +333,19 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
     if (selectedRuleRoom !== 'Global') {
       filtered = filtered.filter(s => s.room === selectedRuleRoom);
     }
-    return [...new Set(filtered.map(s => s.name).filter(Boolean))];
-  }, [allSensors, selectedRuleRoom]);
+    const tankSensors = ['Global', 'Water Tanks'].includes(selectedRuleRoom)
+      ? (Array.isArray(allDevices) ? allDevices : [])
+          .filter(device => device.type === 'water-tank')
+          .flatMap(device => [`${device.deviceId}_tank`, `${device.deviceId}_battery`])
+      : [];
+    return [...new Set([...filtered.map(s => s.name).filter(Boolean), ...tankSensors])];
+  }, [allSensors, allDevices, selectedRuleRoom]);
 
   const actionableDevices = (Array.isArray(allDevices) ? allDevices : []).filter((device) => {
     if (device?.isConfigured === false) return false;
     if (!device?.deviceId) return false;
     // Support media_player explicitly
-    const effectiveType = device.type === 'touch-panel' || (Array.isArray(device.subDevices) && device.subDevices.length > 0)
+    const effectiveType = device.type === 'touch-panel' || device.type === 'retro-fit' || (Array.isArray(device.subDevices) && device.subDevices.length > 0)
       ? 'touch-panel'
       : device.type;
     return Boolean(DEVICE_COMMANDS[effectiveType] || DEVICE_COMMANDS.default);
@@ -338,6 +353,7 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
 
   const filteredDevicesByRoom = actionableDevices.filter((device) => {
     if (selectedRuleRoom === 'Global') return true;
+    if (selectedRuleRoom === 'Water Tanks') return device.type === 'water-tank';
     return device.room === selectedRuleRoom;
   });
 
@@ -367,7 +383,7 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
   }, [showModal, actionableDevices, socket, mediaList.length]);
 
   const isTouchPanelDevice = (device) =>
-    Boolean(device) && (device.type === 'touch-panel' || (Array.isArray(device.subDevices) && device.subDevices.length > 0) || device.deviceId?.startsWith('BSQ'));
+    Boolean(device) && (device.type === 'touch-panel' || device.type === 'retro-fit' || (Array.isArray(device.subDevices) && device.subDevices.length > 0) || /^BS(?:Q|4)/i.test(device.deviceId || ''));
 
   const findActionDevice = (targetDeviceId) =>
     filteredDevicesByRoom.find((device) => device.deviceId === targetDeviceId)
@@ -621,6 +637,18 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
               </div>
             );
           })}
+          <div className="room-card-scene glass" onClick={() => openSceneRoom({ name: 'Water Tanks', icon: '💧' })}>
+            <div className="room-card-header-scene">
+              <span className="room-icon-scene" style={{fontSize: 25}}>💧</span>
+              <div className={`active-badge-scene ${(Array.isArray(rules) ? rules : []).some(r => r.room === 'Water Tanks' && r.enabled) ? 'active' : ''}`}>
+                {(Array.isArray(rules) ? rules : []).filter(r => r.room === 'Water Tanks' && r.enabled).length} Active
+              </div>
+            </div>
+            <div className="room-card-body-scene">
+              <h3>Water Tanks</h3>
+              <p>{(Array.isArray(rules) ? rules : []).filter(r => r.room === 'Water Tanks').length} Rules</p>
+            </div>
+          </div>
           <div className="room-card-scene global glass" onClick={() => openSceneRoom({ name: 'Global', icon: '🌍' })}>
             <div className="room-card-header-scene">
               <span className="room-icon-scene"><img src="/icons/icons/Connect.svg" alt="Globe" style={{width: 24, height: 24}} /></span>
@@ -647,7 +675,7 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
               <div className={`rule-card glass ${rule.enabled ? '' : 'disabled'}`} key={rule._id}>
                 <div className="card-top">
                   <div className="card-icon">
-                    <img src={rule.actions.some(a => a.targetDeviceId?.startsWith('media_player.')) ? "/icons/icons/Speaker-White.svg" : "/icons/icons/WIFI-White.svg"} alt="Rule" style={{width: 24, height: 24}} />
+                    <img src={rule.actions.some(a => a.targetDeviceId?.startsWith('media_player.')) ? "/icons/devices/audio.png" : "/icons/icons/WIFI-White.svg"} alt="Rule" style={{width: 24, height: 24, objectFit: 'contain'}} />
                   </div>
                   <div className="scene-card-actions">
                     <button className="action-btn-scene" onClick={() => openEdit(rule)}><img src="/icons/icons/Edit.svg" alt="Edit" style={{width: 14, height: 14}} /></button>
@@ -732,6 +760,7 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
               <div className="input-field-wrapper" style={{ gap: '6px' }}>
                 <label className="scene-step-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <img src="/icons/icons/Settings-White.svg" alt="Settings" style={{width: 11, height: 11}} /> 1. Rule Details
+                  <InfoTip text="Give the rule a recognizable name. Cooldown is the minimum time the system waits before this rule can run again." />
                 </label>
                 <div className="form-grid-2 scene-rule-grid" style={{ gap: '10px', gridTemplateColumns: '1.8fr 1fr' }}>
                   <div className="input-field-wrapper" style={{ gap: '4px' }}>
@@ -744,7 +773,10 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
                     />
                   </div>
                   <div className="input-field-wrapper" style={{ gap: '4px' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Cooldown (sec)</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      Cooldown (sec)
+                      <InfoTip text="After the rule runs, it cannot run again until this many seconds have passed." />
+                    </span>
                     <input 
                       type="number" 
                       value={form.cooldownSeconds} 
@@ -763,6 +795,7 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
               <div className="setup-header scene-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                 <label className="scene-step-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <img src="/icons/icons/WIFI-White.svg" alt="Conditions" style={{width: 11, height: 11}} /> 2. Conditions
+                  <InfoTip text="A condition reads a sensor value. Choose the sensor, comparison sign, and trigger value. The optional times limit when it is active. Example: light level < 30, from 6 PM to 11 PM." />
                 </label>
                 <button type="button" className="action-btn-pill secondary scene-mini-add-btn" style={{ padding: '4px 10px', minHeight: '26px', fontSize: '11px', borderRadius: '8px' }} onClick={addCond}>+ Add</button>
               </div>
@@ -776,10 +809,10 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
                               ? filteredSensorNames.map(s => <option key={s} value={s}>{s}</option>)
                               : <option value="" disabled>No sensors found</option>}
                           </select>
-                        <select className="premium-select" style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '12px', height: '32px' }} value={c.operator} onChange={e => updateCond(i, 'operator', e.target.value)}>
-                          {Object.entries(OPS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                        </select>
-                        <input className="premium-input" style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '12px', height: '32px', border: '1.5px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', outline: 'none' }} type="number" value={c.value} onChange={e => updateCond(i, 'value', e.target.value)} />
+                          <select className="premium-select" style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '12px', height: '32px' }} value={c.operator} onChange={e => updateCond(i, 'operator', e.target.value)}>
+                            {Object.entries(OPS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                          </select>
+                          <input className="premium-input" style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '12px', height: '32px', border: '1.5px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', outline: 'none' }} type="number" value={c.value} onChange={e => updateCond(i, 'value', e.target.value)} />
                       </div>
                       <div className="item-controls scene-condition-time-controls">
                         <input className="premium-input" type="time" title="Start Time (Optional)" style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '12px', height: '32px', border: '1.5px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', outline: 'none' }} value={c.startTime || ''} onChange={e => updateCond(i, 'startTime', e.target.value)} />
@@ -799,6 +832,7 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
               <div className="setup-header scene-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                 <label className="scene-step-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <img src="/icons/icons/Power.svg" alt="Actions" style={{width: 11, height: 11}} /> 3. Actions
+                  <InfoTip text="Actions are MQTT commands sent when every condition is true. Select a light and Set Brightness to adjust it, or select Turn Off for cases such as no human presence. Add more actions if several devices should respond." />
                 </label>
                 <button type="button" className="action-btn-pill secondary scene-mini-add-btn" style={{ padding: '4px 10px', minHeight: '26px', fontSize: '11px', borderRadius: '8px' }} onClick={addAction}>+ Add</button>
               </div>
@@ -872,9 +906,9 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
                             ))}
                           </select>
                         )}
-                        <select className="premium-select" style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '12px', height: '32px' }} value={commandSelectValue} onChange={e => updateAction(i, 'command', e.target.value)}>
-                          {visibleCmds.map(c => <option key={c} value={c}>{fmtCmd(c, a.targetDeviceId)}</option>)}
-                        </select>
+                          <select className="premium-select" style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '12px', height: '32px' }} value={commandSelectValue} onChange={e => updateAction(i, 'command', e.target.value)}>
+                            {visibleCmds.map(c => <option key={c} value={c}>{fmtCmd(c, a.targetDeviceId)}</option>)}
+                          </select>
                         {showFanSpeedPresetDropdown && (
                           <select
                             className="premium-select"
@@ -967,4 +1001,3 @@ const Scenes = ({ socket, rooms, allDevices, sensors, onAddRoom }) => {
 };
 
 export default Scenes;
-

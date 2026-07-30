@@ -1,6 +1,7 @@
 import { publishToTopic } from '../mqtt/mqttManager.js';
 import Device from '../../modules/devices/Device.js';
 import Sensor from '../../modules/sensors/Sensor.js';
+import { getPanelCommandTopic, isPanelDevice } from '../../modules/devices/panelDevice.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  TOPIC RESOLVER (Aligned with smarthome.controller.js)
@@ -20,8 +21,8 @@ function resolveDeviceTopic(device) {
   if (id.startsWith('BSP') || type === 'plug' || type === 'switch') {
     return `smart-switch/command/${id}`;
   }
-  if (id.startsWith('BSQ') || type === 'touch-panel') {
-    return `touch-panel/${id}/switch/command`;
+  if (isPanelDevice(device)) {
+    return getPanelCommandTopic(device);
   }
   if (type === 'curtain') {
     return `touch-panel/${id}/switch/command`;
@@ -51,7 +52,7 @@ export async function publishDeviceToHA(device) {
   };
 
   try {
-    if (device.type === 'touch-panel' && device.subDevices && device.subDevices.length > 0) {
+    if (isPanelDevice(device) && device.subDevices && device.subDevices.length > 0) {
       // Expose each subdevice in the touch panel as an independent entity in HA
       for (const sd of device.subDevices) {
         const entityId = `${deviceId}_${sd.index}`;
@@ -183,7 +184,7 @@ export async function publishStateToHA(device) {
   const deviceId = device.deviceId;
 
   try {
-    if (device.type === 'touch-panel' && device.subDevices && device.subDevices.length > 0) {
+    if (isPanelDevice(device) && device.subDevices && device.subDevices.length > 0) {
       for (const sd of device.subDevices) {
         const entityId = `${deviceId}_${sd.index}`;
         const stateTopic = `smarthome/ha/${entityId}/status`;
@@ -251,7 +252,7 @@ export async function removeDeviceFromHA(device) {
   const deviceId = device.deviceId;
 
   try {
-    if (device.type === 'touch-panel' && device.subDevices && device.subDevices.length > 0) {
+    if (isPanelDevice(device) && device.subDevices && device.subDevices.length > 0) {
       for (const sd of device.subDevices) {
         const entityId = `${deviceId}_${sd.index}`;
         const component = sd.type === 'fan' ? 'fan' : 'switch';
@@ -410,7 +411,7 @@ export async function handleHomeAssistantCommand(entityId, payload, io) {
 
   // 1. Touch Panel Sub-Devices
   if (subIndex !== null) {
-    const subDeviceTopic = `touch-panel/${mainDeviceId}/switch/command`;
+    const subDeviceTopic = getPanelCommandTopic(device);
     mqttPayload.type = 'switch';
     const targetSub = device.subDevices.find(s => s.index === subIndex);
     if (!targetSub) return;

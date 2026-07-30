@@ -7,6 +7,7 @@
 const MQTT_COMMAND_TOPIC = 'smart_home/rgbw/rgbw1/command';
 
 let _mqttClient = null;
+const waterLevelState = new Map();
 
 /**
  * Set the MQTT client reference (called once from server.js after connection).
@@ -20,6 +21,15 @@ export function setMqttClient(client) {
  */
 export function getMqttClient() {
   return _mqttClient;
+}
+
+export function setWaterLevelState(deviceId, metric, value) {
+  const current = waterLevelState.get(deviceId) || {};
+  waterLevelState.set(deviceId, { ...current, [metric]: value });
+}
+
+export function getWaterLevelState(deviceId) {
+  return waterLevelState.get(deviceId) || null;
 }
 
 /**

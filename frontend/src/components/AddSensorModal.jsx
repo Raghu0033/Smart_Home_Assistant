@@ -1,26 +1,38 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 
 
-const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
+const AddSensorModal = ({ isOpen, onClose, onAdd, onSave, sensor = null, initialRoom = null, rooms }) => {
   const [formData, setFormData] = useState({
     name: '',
     topic: '',
     room: 'Unassigned',
-    unit: ''
+    unit: '',
+    icon: '📡'
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData(sensor ? {
+      name: sensor.name || '',
+      topic: sensor.topic || '',
+      room: sensor.room || 'Unassigned',
+      unit: sensor.unit || '',
+      icon: sensor.icon || '📡'
+    } : { name: '', topic: '', room: initialRoom?.name || 'Unassigned', unit: '', icon: '📡' });
+  }, [isOpen, sensor, initialRoom]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onAdd(formData);
-    setFormData({ name: '', topic: '', room: 'Unassigned', unit: '' });
+    if (sensor) onSave(sensor._id, formData);
+    else onAdd(formData);
     onClose();
   };
 
   return (
-    <div className="modal-overlay">
+    <div className="modal-overlay sensor-modal-overlay">
       <div className="modal-content animate-slide-up premium-sensor-modal">
         <div className="modal-premium-header">
           <div className="header-bg-glow"></div>
@@ -33,8 +45,8 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
             </button>
           </div>
           <div className="header-text-bottom">
-            <h2>Add Custom Sensor</h2>
-            <p>Register a new telemetry source</p>
+            <h2>{sensor ? 'Sensor Settings' : 'Add Custom Sensor'}</h2>
+            <p>{sensor ? 'Edit its name, icon and MQTT source' : 'Register a new telemetry source'}</p>
           </div>
         </div>
 
@@ -84,12 +96,20 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
                 </select>
               </div>
             </div>
+            <div className="input-field-wrapper">
+              <label>Sensor Icon</label>
+              <div className="sensor-icon-picker">
+                {['📡', '🌡️', '💧', '⚡', '💨', '☀️', '🔔', '📊'].map(icon => (
+                  <button type="button" key={icon} className={formData.icon === icon ? 'active' : ''} onClick={() => setFormData({ ...formData, icon })}>{icon}</button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="premium-modal-footer">
             <button type="button" className="action-btn-pill secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="action-btn-pill primary flex-grow">
-              Register Sensor
+              {sensor ? 'Save Changes' : 'Register Sensor'}
             </button>
           </div>
         </form>
@@ -108,6 +128,10 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
             justify-content: center;
             z-index: 1200;
           }
+          .sensor-modal-overlay {
+            align-items: center !important;
+            padding: 16px !important;
+          }
           .modal-content {
             background: var(--bg-card);
             border-radius: var(--radius-lg);
@@ -116,7 +140,7 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
           }
           .modal-premium-header {
             position: relative;
-            padding: 24px;
+            padding: 22px 26px;
             background: var(--bg-sidebar);
             color: white;
             overflow: hidden;
@@ -181,7 +205,7 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
             letter-spacing: 0.5px;
           }
           .premium-form-body {
-            padding: 24px;
+            padding: 24px 26px 26px;
             display: flex;
             flex-direction: column;
             gap: 20px;
@@ -208,7 +232,8 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
           }
           .input-field-wrapper input, .premium-select {
             width: 100%;
-            padding: 10px 14px;
+            min-height: 44px;
+            padding: 11px 14px;
             border-radius: var(--radius-sm);
             border: 1px solid var(--border);
             background: var(--bg-main);
@@ -224,8 +249,8 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
           }
           .form-grid-2 {
             display: grid;
-            grid-template-columns: 1fr 1.5fr;
-            gap: 12px;
+            grid-template-columns: minmax(120px, .8fr) minmax(190px, 1.2fr);
+            gap: 14px;
           }
           .premium-modal-footer {
             display: flex;
@@ -237,20 +262,31 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
           @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
           .premium-sensor-modal {
-            max-width: 420px;
+            max-width: 520px;
             padding: 0 !important;
             overflow: hidden;
-            width: 100%;
+            width: min(calc(100vw - 32px), 520px);
           }
 
           @media (max-width: 768px) {
+            .sensor-modal-overlay {
+              align-items: center !important;
+              padding: 10px !important;
+            }
             .premium-sensor-modal {
-              width: 90% !important;
-              max-width: 440px !important;
-              border-radius: var(--radius-lg) !important;
+              width: min(calc(100vw - 20px), 520px) !important;
+              max-width: 520px !important;
+              border-radius: 18px !important;
               margin: auto;
-              max-height: 90dvh;
+              max-height: calc(100dvh - 20px);
               overflow-y: auto;
+            }
+            .premium-sensor-modal .modal-premium-header {
+              padding: 18px 20px;
+            }
+            .premium-sensor-modal .premium-form-body {
+              padding: 20px;
+              gap: 18px;
             }
             .form-grid-2 {
               grid-template-columns: 1fr;
@@ -262,7 +298,8 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
             .action-btn-pill {
               width: 100%;
               justify-content: center;
-              padding: 14px;
+              min-height: 46px;
+              padding: 12px;
             }
             .premium-form-body {
               padding-bottom: max(24px, env(safe-area-inset-bottom));
@@ -275,4 +312,3 @@ const AddSensorModal = ({ isOpen, onClose, onAdd, rooms }) => {
 };
 
 export default AddSensorModal;
-

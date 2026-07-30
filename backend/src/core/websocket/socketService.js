@@ -1,10 +1,14 @@
-import { publishToTopic } from '../../integrations/mqtt/mqttManager.js';
+import { getWaterLevelState, publishToTopic } from '../../integrations/mqtt/mqttManager.js';
 import Device from '../../modules/devices/Device.js';
 import Automation from '../../modules/automations/Automation.js';
 import { getSensorData, updateSensorData, evaluateAutomations } from '../../modules/automations/automationEngine.js';
 import { callService, sendMessage, cachedHaStates } from '../../integrations/homeassistant/ha-client.js';
 import { publishStateToHA } from '../../integrations/homeassistant/ha-discovery.js';
 import { initStaircase } from '../../modules/staircase/staircaseService.js';
+import WaterLevelConfig from '../../modules/devices/WaterLevelConfig.js';
+import { rememberTouchPanelState } from '../../modules/devices/touchPanelCommandGuard.js';
+import { getPanelCommandTopic, getPanelTopicPrefix, isPanelDevice } from '../../modules/devices/panelDevice.js';
+import { isAutomationDeviceLocked } from '../../modules/automations/automationDeviceLock.js';
 
 
 export const initSocket = (io, mqttClient) => {
@@ -12,6 +16,35 @@ export const initSocket = (io, mqttClient) => {
 
   io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
+    if (socket.profile?.id) socket.join(`user:${socket.profile.id}`);
+
+    const alwaysAllowedEvents = new Set(['request_initial_states', 'request_mqtt_status']);
+    const permissionForEvent = event => {
+      if (event.startsWith('wli_')) return 'water-level';
+      if (/audio|music|media|speaker|volume/i.test(event)) return 'audio-devices';
+      if (/staircase/i.test(event)) return 'staircase';
+      if (/scene|automation|schedule/i.test(event)) return 'scenes';
+      return 'devices';
+    };
+    const canSeeState = state =>
+      socket.profile?.role === 'admin' ||
+      socket.profile?.allRoomsAccess ||
+      (socket.profile?.allowedRoomNames || []).includes(state?.room);
+    socket.use(async ([event, payload = {}], next) => {
+      if (alwaysAllowedEvents.has(event) || socket.profile?.role === 'admin') return next();
+      const permission = permissionForEvent(event);
+      if (!(socket.profile?.permissions || []).includes(permission)) {
+        return next(new Error(`Profile cannot use ${permission}`));
+      }
+      if (socket.profile?.allRoomsAccess) return next();
+      const deviceId = payload.deviceId || payload.entityId || payload.entity_id;
+      if (!deviceId) return next();
+      const device = await Device.findOne({ deviceId }).select('room roomId');
+      if (device && !(socket.profile?.allowedRoomIds || []).map(String).includes(String(device.roomId))) {
+        return next(new Error('Profile cannot access this room'));
+      }
+      next();
+    });
 
 
 
@@ -22,13 +55,89 @@ export const initSocket = (io, mqttClient) => {
 
     // Send currently cached Home Assistant states to the new client
     cachedHaStates.forEach(state => {
-      socket.emit('ha_entity_state_change', state);
+      if (canSeeState(state)) socket.emit('ha_entity_state_change', state);
     });
 
     socket.on('request_initial_states', () => {
-      cachedHaStates.forEach(state => {
-        socket.emit('ha_entity_state_change', state);
+      socket.emit('mqtt_status', {
+        status: mqttClient.connected ? 'Connected' : 'Offline'
       });
+      cachedHaStates.forEach(state => {
+        if (canSeeState(state)) socket.emit('ha_entity_state_change', state);
+      });
+    });
+
+    socket.on('request_mqtt_status', (ack) => {
+      const result = { status: mqttClient.connected ? 'Connected' : 'Offline' };
+      if (typeof ack === 'function') ack(result);
+      else socket.emit('mqtt_status', result);
+    });
+
+    socket.on('wli_subscribe', (data = {}) => {
+      const deviceId = String(data.deviceId || '').trim();
+      if (!/^[A-Za-z0-9_-]+$/.test(deviceId)) return;
+
+      const retainedState = getWaterLevelState(deviceId);
+      if (retainedState) {
+        Object.entries(retainedState).forEach(([metric, value]) => {
+          socket.emit('water_level_update', { deviceId, metric, value });
+        });
+      }
+
+      const topics = ['TANK', 'BATTERY', 'MOTOR', 'ALERT']
+        .map(metric => `SMARTHOME/WLI/${deviceId}/${metric}`);
+      mqttClient.subscribe(topics, (err) => {
+        if (err) {
+          console.error(`[WLI] Failed to subscribe for ${deviceId}:`, err.message);
+        }
+      });
+    });
+
+    socket.on('wli_motor_command', async (data = {}, ack) => {
+      const deviceId = String(data.deviceId || '').trim();
+      const state = String(data.state || '').trim().toUpperCase();
+      if (!/^[A-Za-z0-9_-]+$/.test(deviceId) || !['ON', 'OFF'].includes(state)) {
+        if (ack) ack({ ok: false, error: 'Invalid water-level device or motor state' });
+        return;
+      }
+
+      try {
+        const ok = await publishToTopic(`SMARTHOME/WLI/${deviceId}/SWITCH`, state);
+        if (ack) ack({ ok });
+      } catch (err) {
+        console.error(`[WLI] Motor command failed for ${deviceId}:`, err.message);
+        if (ack) ack({ ok: false, error: 'MQTT publish failed' });
+      }
+    });
+
+    socket.on('wli_get_automation', async (data = {}, ack) => {
+      const deviceId = String(data.deviceId || '').trim().toUpperCase();
+      if (!/^[A-Z0-9_-]+$/.test(deviceId)) return ack?.({ ok: false });
+      try {
+        const config = await WaterLevelConfig.findOne({ deviceId }).lean();
+        ack?.({ ok: true, config: config || { deviceId, enabled: false, onLevel: 25, offLevel: 90 } });
+      } catch (err) {
+        ack?.({ ok: false, error: err.message });
+      }
+    });
+
+    socket.on('wli_save_automation', async (data = {}, ack) => {
+      const deviceId = String(data.deviceId || '').trim().toUpperCase();
+      const onLevel = Number(data.onLevel);
+      const offLevel = Number(data.offLevel);
+      if (!/^[A-Z0-9_-]+$/.test(deviceId) || onLevel < 0 || offLevel > 100 || onLevel >= offLevel) {
+        return ack?.({ ok: false, error: 'ON level must be lower than OFF level' });
+      }
+      try {
+        const config = await WaterLevelConfig.findOneAndUpdate(
+          { deviceId },
+          { deviceId, enabled: Boolean(data.enabled), onLevel, offLevel },
+          { upsert: true, new: true, runValidators: true }
+        ).lean();
+        ack?.({ ok: true, config });
+      } catch (err) {
+        ack?.({ ok: false, error: err.message });
+      }
     });
 
     socket.on('ha_command', (data) => {
@@ -202,13 +311,12 @@ export const initSocket = (io, mqttClient) => {
         topic = device.topic || `rgbw-light/${id}/light/command`;
         const stateUpdate = { on };
         if (on) {
-          stateUpdate.brightness = 255;
-          mqttPayload = { command: 'brightness_change', brightness: 255 };
+          stateUpdate.brightness = 128;
+          mqttPayload = { command: 'brightness_change', brightness: stateUpdate.brightness };
         } else {
           stateUpdate.brightness = 0;
-          stateUpdate.spectrumRgb = 0;
           stateUpdate.effect = 'solid';
-          mqttPayload = { command: 'rgbw_power_off' };
+          mqttPayload = { command: 'brightness_change', brightness: 0 };
         }
         await updateDeviceAndPublish(device.deviceId, stateUpdate, mqttPayload, topic);
       } else if (device.type === 'tunable-light' || device.type === 'tune light') {
@@ -235,24 +343,23 @@ export const initSocket = (io, mqttClient) => {
 
     socket.on('touch_panel_all_off', async (data) => {
       const { deviceId } = data;
+      if (isAutomationDeviceLocked(deviceId)) {
+        socket.emit('toast_message', 'This device is locked until its timer or schedule automation completes');
+        return;
+      }
       const device = await Device.findOne({ deviceId });
       if (!device || !device.subDevices) return;
 
-      const topic = `touch-panel/${deviceId}/switch/command`;
-      
-      for (const sd of device.subDevices) {
-        if (!sd.on) continue;
-
-        let mqttPayload = { 
+      const topic = getPanelCommandTopic(device);
+      for (const subDevice of device.subDevices) {
+        if (!subDevice.on) continue;
+        rememberTouchPanelState(deviceId, subDevice.index, false);
+        await publishToTopic(topic, {
           entityId: deviceId,
           type: 'switch',
-          value: `${sd.index}0` // Index + '0' for OFF
-        };
-        
-        await publishToTopic(topic, mqttPayload);
-        
-        // Add a small delay to prevent network congestion/dropped messages
-        await new Promise(resolve => setTimeout(resolve, 200));
+          value: `${subDevice.index}0`
+        });
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       // Update all to OFF in DB
@@ -262,7 +369,7 @@ export const initSocket = (io, mqttClient) => {
       );
 
       const updatedDevice = await Device.findOne({ deviceId });
-      io.emit('device_updated', updatedDevice);
+      io.emit('device_state_update', updatedDevice);
       try {
         await publishStateToHA(updatedDevice);
       } catch (haErr) {
@@ -272,39 +379,49 @@ export const initSocket = (io, mqttClient) => {
 
     socket.on('touch_panel_action', async (data) => {
       const { deviceId, subDeviceIndex, type, value } = data;
+      if (isAutomationDeviceLocked(deviceId)) {
+        socket.emit('toast_message', 'This device is locked until its timer or schedule automation completes');
+        return;
+      }
       const device = await Device.findOne({ deviceId });
       if (!device) return;
+      const index = Number(subDeviceIndex);
+      const subDevice = device.subDevices?.find(sd => Number(sd.index) === index);
+      if (!Number.isInteger(index) || index < 1 || !subDevice) return;
 
-      const topic = `touch-panel/${deviceId}/switch/command`;
+      const topic = getPanelCommandTopic(device);
       let mqttPayload = { entityId: deviceId };
 
       if (type === 'switch') {
         const state = value ? '1' : '0';
         mqttPayload.type = 'switch';
-        mqttPayload.value = `${subDeviceIndex}${state}`;
-        
-        // Optimistic update
+        mqttPayload.value = `${index}${state}`;
+
+        // Send to the panel immediately; persistence should not delay physical response.
+        await publishToTopic(topic, mqttPayload);
         await Device.updateOne(
-          { deviceId, "subDevices.index": subDeviceIndex },
+          { deviceId, "subDevices.index": index },
           { $set: { "subDevices.$.on": value } }
         );
       } else if (type === 'fan') {
+        const speed = Number(value);
+        if (subDevice.type !== 'fan' || !subDevice.on || !Number.isInteger(speed) || speed < 1 || speed > 5) return;
         mqttPayload.type = 'dimmer';
-        mqttPayload.dimmer = String(subDeviceIndex);
-        mqttPayload.value = String(value);
+        mqttPayload.dimmer = String(index);
+        mqttPayload.value = String(speed);
 
-        // Optimistic update
+        await publishToTopic(topic, mqttPayload);
         await Device.updateOne(
-          { deviceId, "subDevices.index": subDeviceIndex },
-          { $set: { "subDevices.$.speed": value, "subDevices.$.on": value > 0 } }
+          { deviceId, "subDevices.index": index },
+          { $set: { "subDevices.$.speed": speed, "subDevices.$.on": true } }
         );
+      } else {
+        return;
       }
 
-      await publishToTopic(topic, mqttPayload);
-      
       // Update local devices and emit
       const updatedDevice = await Device.findOne({ deviceId });
-      io.emit('device_updated', updatedDevice);
+      io.emit('device_state_update', updatedDevice);
       try {
         await publishStateToHA(updatedDevice);
       } catch (haErr) {
@@ -312,10 +429,60 @@ export const initSocket = (io, mqttClient) => {
       }
     });
 
+    socket.on('touch_panel_backlight', async (data, ack) => {
+      try {
+        const deviceId = String(data?.deviceId || '').trim();
+        const device = await Device.findOne({ deviceId });
+        const isTouchPanel = isPanelDevice(device);
+        if (!isTouchPanel) throw new Error('Touch panel not found');
+
+        const clampInteger = (value, min, max) => {
+          const number = Number(value);
+          if (!Number.isFinite(number)) throw new Error('Invalid backlight value');
+          return Math.min(max, Math.max(min, Math.round(number)));
+        };
+        const normalizeColor = color => {
+          if (!Array.isArray(color) || color.length !== 3) throw new Error('Invalid backlight color');
+          return color.map(value => clampInteger(value, 0, 255));
+        };
+
+        const backlight = {
+          onColor: normalizeColor(data.onColor),
+          offColor: normalizeColor(data.offColor),
+          onBrightness: clampInteger(data.onBrightness, 0, 100),
+          transitionSeconds: clampInteger(data.transitionSeconds, 0, 255),
+          offBrightness: clampInteger(data.offBrightness, 0, 100)
+        };
+        const bklt = [
+          ...backlight.onColor,
+          ...backlight.offColor,
+          backlight.onBrightness,
+          backlight.transitionSeconds,
+          backlight.offBrightness
+        ];
+
+        const published = await publishToTopic(`${getPanelTopicPrefix(device)}/${deviceId}/backlight/command`, { bklt });
+        if (!published) throw new Error('MQTT broker is not connected');
+        const updatedDevice = await Device.findOneAndUpdate(
+          { deviceId },
+          { $set: { touchPanelBacklight: backlight } },
+          { returnDocument: 'after' }
+        );
+        io.emit('device_state_update', updatedDevice);
+        if (typeof ack === 'function') ack({ ok: true, bklt });
+      } catch (error) {
+        if (typeof ack === 'function') ack({ ok: false, error: error.message });
+      }
+    });
+
     socket.on('set_offline_timer', async (data) => {
-      const { deviceId, timer, action } = data;
+      const { deviceId, timer, timerSeconds, action } = data;
       const device = await Device.findOne({ deviceId });
       if (!device) return;
+      const totalSeconds = Number.isFinite(Number(timerSeconds))
+        ? Math.max(0, Math.round(Number(timerSeconds)))
+        : Math.max(0, Math.round(Number(timer) * 60));
+      const timerMinutes = totalSeconds / 60;
 
       // Determine topic prefix based on device ID prefix
       let prefix = 'smart-switch';
@@ -323,6 +490,8 @@ export const initSocket = (io, mqttClient) => {
         prefix = 'three-phase';
       } else if (deviceId.startsWith('BSP')) {
         prefix = 'smart-switch';
+      } else if (device.type === 'tunable-light' || device.type === 'tune light') {
+        prefix = 'tunable-light';
       }
 
       const topic = `${prefix}/${device.deviceId}/timer/command`;
@@ -332,7 +501,7 @@ export const initSocket = (io, mqttClient) => {
       if (Number(timer) === 0) hwAction = "0";
 
       const mqttPayload = {
-        timer: String(timer),
+        timer: String(timerMinutes),
         action: hwAction
       };
 
@@ -340,14 +509,14 @@ export const initSocket = (io, mqttClient) => {
       
       const updatedDevice = await Device.findOneAndUpdate(
         { deviceId },
-        { timerRemaining: Number(timer) * 60, timerAction: String(action) },
+        { timerRemaining: totalSeconds, timerAction: String(action) },
         { returnDocument: 'after' }
       );
       if (updatedDevice) {
         io.emit('device_state_update', updatedDevice);
       }
 
-      console.log(`[TIMER] Set offline timer for ${deviceId} on topic ${topic}: ${timer} mins, action ${action}`);
+      console.log(`[TIMER] Set offline timer for ${deviceId} on topic ${topic}: ${totalSeconds}s, action ${action}`);
     });
 
     socket.on('add_schedule', async (data) => {
@@ -361,6 +530,61 @@ export const initSocket = (io, mqttClient) => {
         io.emit('device_state_update', device);
         console.log(`[SCHEDULE] Added custom action schedule for ${deviceId}`);
       }
+    });
+
+    socket.on('add_rgbw_schedule', async (data = {}, ack) => {
+      const deviceId = String(data.deviceId || '').trim();
+      const actionTime = String(data.actionTime || '');
+      const actionType = String(data.actionType || '').toUpperCase();
+      const restoreAfterEnd = ['COLOR', 'ANIMATION'].includes(actionType) && Boolean(data.restoreAfterEnd);
+      const endEnabled = Boolean(data.endEnabled);
+      const endActionType = String(data.endActionType || 'OFF').toUpperCase();
+      const days = Array.isArray(data.days) ? data.days.filter(day =>
+        ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].includes(day)
+      ) : [];
+      if (!deviceId || !/^\d{2}:\d{2}$/.test(actionTime) || days.length === 0 ||
+          !['ON', 'OFF', 'BRIGHTNESS', 'COLOR', 'ANIMATION'].includes(actionType) ||
+          !['ON', 'OFF'].includes(endActionType) ||
+          ((restoreAfterEnd || endEnabled) && !/^\d{2}:\d{2}$/.test(String(data.endTime || '')))) {
+        return ack?.({ ok: false, error: 'Complete the schedule details' });
+      }
+
+      const clamp = value => Math.min(255, Math.max(0, Math.round(Number(value) || 0)));
+      const schedule = {
+        actionTime,
+        actionType,
+        days,
+        enabled: true,
+        restoreAfterEnd,
+        endEnabled,
+        endActionType,
+        ...((restoreAfterEnd || endEnabled) && /^\d{2}:\d{2}$/.test(String(data.endTime || ''))
+          ? { endTime: String(data.endTime) }
+          : {}),
+        ...(actionType === 'BRIGHTNESS' ? {
+          scheduledBrightness: Math.min(100, Math.max(1, Math.round(Number(data.scheduledBrightness) || 50)))
+        } : {}),
+        ...(actionType === 'COLOR' ? {
+          rgbwColor: {
+            r: clamp(data.rgbwColor?.r),
+            g: clamp(data.rgbwColor?.g),
+            b: clamp(data.rgbwColor?.b),
+            w: clamp(data.rgbwColor?.w)
+          }
+        } : {}),
+        ...(actionType === 'ANIMATION' ? {
+          animationEffect: String(data.animationEffect || 'rainbow')
+        } : {})
+      };
+
+      const device = await Device.findOneAndUpdate(
+        { deviceId, type: { $in: ['rgbw', 'tunable-light', 'tune light'] } },
+        { $push: { schedules: schedule } },
+        { returnDocument: 'after' }
+      );
+      if (!device) return ack?.({ ok: false, error: 'Supported light device not found' });
+      io.emit('device_state_update', device);
+      ack?.({ ok: true });
     });
 
     socket.on('remove_schedule', async (data) => {
@@ -387,14 +611,16 @@ export const initSocket = (io, mqttClient) => {
 
       if (isRgbwTopic && command === 'legacy') {
         if (data.type) return data;
-        return { type: 'colour', colour: [0, 0, 0, 0] };
+        return { type: 'brightness', value: 0 };
       }
 
       switch (command) {
         case 'color_change':
           return { type: 'colour', colour: [data.r, data.g, data.b, data.w] };
         case 'brightness_change':
-          return { type: 'brightness', value: Math.round((data.brightness / 255) * 100) };
+          return isRgbwTopic
+            ? { type: 'brightness', value: Math.min(255, Math.max(0, Math.round(Number(data.brightness) || 0))) }
+            : { type: 'brightness', value: Math.round((data.brightness / 255) * 100) };
         case 'white_change':
           return { type: 'colour', colour: [data.r || 0, data.g || 0, data.b || 0, data.white] };
         case 'set_effect':
@@ -402,7 +628,7 @@ export const initSocket = (io, mqttClient) => {
         case 'force_white_mode':
           return { type: 'colour', colour: [0, 0, 0, 255] };
         case 'rgbw_power_off':
-          return { type: 'colour', colour: [0, 0, 0, 0] };
+          return { type: 'brightness', value: 0 };
         default:
           return data;
       }
@@ -448,7 +674,12 @@ export const initSocket = (io, mqttClient) => {
     };
 
     socket.on('color_change', async (data) => {
-      const { deviceId, r, g, b, w } = data;
+      const { deviceId } = data;
+      const clampRgbw = value => Math.min(255, Math.max(0, Math.round(Number(value) || 0)));
+      const r = clampRgbw(data.r);
+      const g = clampRgbw(data.g);
+      const b = clampRgbw(data.b);
+      const w = clampRgbw(data.w);
       const rgb = (r << 16) | (g << 8) | b;
       
       const basePayload = {
@@ -474,9 +705,7 @@ export const initSocket = (io, mqttClient) => {
       let mqttPayload;
       let finalTopic = undefined;
 
-      if (device.type === 'rgbw' && brightness === 0) {
-        mqttPayload = { command: 'rgbw_power_off' };
-      } else if (device.type === 'tunable-light' || device.type === 'tune light') {
+      if (device.type === 'tunable-light' || device.type === 'tune light') {
         finalTopic = `tunable-light/${deviceId}/light/command`;
         mqttPayload = { command: 'brightness_change', type: 'brightness', value: Math.round((brightness / 255) * 100), brightness };
       } else {
@@ -534,7 +763,7 @@ export const initSocket = (io, mqttClient) => {
       const mqttPayload = {
         command: 'rgbw_power_off'
       };
-      await updateDeviceAndPublish(deviceId, { on: false, brightness: 0, spectrumRgb: 0, effect: 'solid' }, mqttPayload);
+      await updateDeviceAndPublish(deviceId, { on: false, brightness: 0, effect: 'solid' }, mqttPayload);
     });
 
     socket.on('curtain_action', async (data) => {

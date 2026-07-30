@@ -1,37 +1,73 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 
-const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, onMobileClose }) => {
+const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, onMobileClose, profile }) => {
   const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (!isMobileOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') onMobileClose?.();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [isMobileOpen, onMobileClose]);
 
   const menuItems = [
     { id: 'dashboard', icon: <img src="/icons/icons/Home-White.svg" alt="Dashboard" style={{width: 20, height: 20}} />, label: 'Dashboard' },
-    { id: 'scenes', icon: <img src="/icons/devices/scenes.svg" alt="Scenes" style={{width: 22, height: 22, objectFit: 'contain'}} />, label: 'Scenes' },
-    { id: 'sensors', icon: <img src="/icons/devices/sensor.svg" alt="Sensors" style={{width: 22, height: 22, objectFit: 'contain'}} />, label: 'Sensors' },
     { id: 'devices', icon: <img src="/icons/icons/Plug-White.svg" alt="Devices" style={{width: 20, height: 20}} />, label: 'Devices' },
+    { id: 'sensors', icon: <img className="sensor-nav-icon" src="/icons/devices/sensor.svg" alt="Sensors" style={{width: 22, height: 22, objectFit: 'contain'}} />, label: 'Sensors' },
+    { id: 'scenes', icon: <img className="scenes-nav-icon" src="/icons/devices/scenes.svg" alt="Scenes" style={{width: 22, height: 22, objectFit: 'contain'}} />, label: 'Scenes' },
     { id: 'audio-devices', icon: <img src="/icons/devices/audio.png" alt="Audio" style={{width: 20, height: 20, objectFit: 'contain', filter: 'invert(1) brightness(2)'}} />, label: 'Audio' },
     { id: 'staircase', icon: <img src="/icons/devices/staircase.png" alt="Staircase" style={{width: 20, height: 20, objectFit: 'contain', filter: 'invert(1) brightness(2)'}} />, label: 'Staircase' },
-    { id: 'surveillance', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 10l1.106-.553A1 1 0 0118 10.342v3.316a1 1 0 01-.894.895L16 14"/><rect x="2" y="6" width="14" height="12" rx="2"/><circle cx="9" cy="12" r="2"/></svg>, label: 'Surveillance' },
+    { id: 'water-level', icon: <img className="water-tank-nav-icon" src="/icons/devices/water_tank.svg" alt="Water tanks" />, label: 'Water Tanks' },
+    { id: 'surveillance', icon: <img className="cctv-nav-icon" src="/icons/icons/cctv.png" alt="Surveillance" />, label: 'Surveillance' },
+    { id: 'profile', icon: <img src="/icons/icons/Profile-White.svg" alt="Profiles" style={{width: 20, height: 20}} />, label: 'Profiles' },
     { id: 'settings', icon: <img src="/icons/icons/Settings-White.svg" alt="Settings" style={{width: 20, height: 20}} />, label: 'Settings' },
   ];
+  const visibleMenuItems = menuItems.filter(item =>
+    !profile ||
+    profile.role === 'admin' ||
+    item.id === 'dashboard' ||
+    item.id === 'profile' ||
+    (profile.permissions || []).includes(item.id)
+  );
 
   return (
-    <div className={`sidebar ${collapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`}>
-      <div className="sidebar-header">
-        <div className="logo">
-          <span className="logo-icon">⚡</span>
-          <span className="logo-text">SmartHome</span>
-        </div>
+    <>
+      {isMobileOpen && (
         <button
-          className="sidebar-toggle"
+          type="button"
+          className="sidebar-backdrop"
+          onClick={onMobileClose}
+          aria-label="Close navigation"
+        />
+      )}
+      <div className={`sidebar ${collapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`}>
+      <div className="sidebar-mobile-header">
+        <div>
+          <strong>Menu</strong>
+          <small>{profile?.name || 'Smart Home'}</small>
+        </div>
+        <button type="button" className="sidebar-close-btn" onClick={onMobileClose} aria-label="Close menu">×</button>
+      </div>
+      <div className="sidebar-header">
+        <button
+          type="button"
+          className="logo"
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          <img src={collapsed ? "/icons/icons/Right-White.svg" : "/icons/icons/Left-White.svg"} alt="Toggle" style={{width: 18, height: 18}} />
+          <span className="logo-icon">
+            <img className="company-logo company-logo-light" src="/icons/icons/company-logo-light.png" alt="Bharat Smart Services" />
+            <img className="company-logo company-logo-dark" src="/icons/icons/company-logo-dark.png" alt="Bharat Smart Services" />
+          </span>
+          <span className="logo-text">SmartHome</span>
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto">
-        {menuItems.map((item) => (
+        {visibleMenuItems.map((item) => (
           <button
             key={item.id}
             className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
@@ -43,10 +79,22 @@ const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, onMobileClose }) => {
           </button>
         ))}
       </nav>
-      <div className="mt-auto pt-4 border-t border-slate-700/50">
+      <div className="sidebar-footer">
         <button
-          className="nav-item text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors w-full"
-          onClick={() => {
+          className="nav-item logout-nav-item"
+          onClick={async () => {
+            if (!window.confirm('Are you sure you want to log out?')) return;
+            const token = localStorage.getItem('smarthome_token');
+            if (token) {
+              try {
+                await fetch(`http://${window.location.hostname}:3000/api/auth/logout`, {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+              } catch {
+                // Local logout must still complete if the server is unavailable.
+              }
+            }
             localStorage.removeItem('smarthome_token');
             window.location.replace('/login');
           }}
@@ -56,9 +104,9 @@ const Sidebar = ({ activeTab, setActiveTab, isMobileOpen, onMobileClose }) => {
           <span className="nav-label">Logout</span>
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 
 export default Sidebar;
-

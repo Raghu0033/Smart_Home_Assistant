@@ -22,6 +22,10 @@ const deviceSchema = new mongoose.Schema({
     type: String,
     default: 'Unassigned',
   },
+  roomId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Room',
+  },
   isConfigured: {
     type: Boolean,
     default: false,
@@ -51,6 +55,10 @@ const deviceSchema = new mongoose.Schema({
   topic: {
     type: String,
   },
+  tankCapacity: {
+    type: Number,
+    min: 1,
+  },
   timerRemaining: {
     type: Number,
     default: 0,
@@ -79,21 +87,49 @@ const deviceSchema = new mongoose.Schema({
   subDevices: [{
     index: Number,
     type: { type: String, enum: ['switch', 'fan'] },
+    applianceType: {
+      type: String,
+      enum: ['switch', 'plug', 'light', 'fan', 'fridge', 'ac', 'geyser', 'tv', 'projector', 'socket', 'other'],
+      default: 'switch'
+    },
     label: String,
+    icon: String,
     on: { type: Boolean, default: false },
     speed: { type: Number, default: 1 } // for fans: 1-5
   }],
+  touchPanelBacklight: {
+    onColor: { type: [Number], default: [102, 204, 0] },
+    offColor: { type: [Number], default: [0, 102, 255] },
+    onBrightness: { type: Number, default: 100, min: 0, max: 100 },
+    transitionSeconds: { type: Number, default: 10, min: 0, max: 255 },
+    offBrightness: { type: Number, default: 100, min: 0, max: 100 }
+  },
   schedules: [{
     startTime: String,
     endTime: String,
+    actionTime: String,
     startAction: { type: String, default: 'ON' },
     endAction: { type: String, default: 'OFF' },
+    actionType: { type: String, enum: ['ON', 'OFF', 'BRIGHTNESS', 'COLOR', 'ANIMATION'] },
+    scheduledBrightness: { type: Number, min: 1, max: 100 },
+    endEnabled: { type: Boolean, default: false },
+    endActionType: { type: String, enum: ['ON', 'OFF'], default: 'OFF' },
+    rgbwColor: {
+      r: Number,
+      g: Number,
+      b: Number,
+      w: Number
+    },
+    animationEffect: String,
+    restoreAfterEnd: { type: Boolean, default: false },
+    restorePending: { type: Boolean, default: false },
+    restoreState: mongoose.Schema.Types.Mixed,
     days: [String],
     enabled: { type: Boolean, default: true }
   }],
   lastSeen: {
     type: Date,
-    default: Date.now
+    default: null
   }
 }, {
   timestamps: true,

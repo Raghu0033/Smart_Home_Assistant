@@ -1,5 +1,6 @@
 import Device from '../devices/Device.js';
 import { publishToTopic } from '../../integrations/mqtt/mqttManager.js';
+import { getPanelCommandTopic, isPanelDevice } from '../devices/panelDevice.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  DEVICE TYPE MAPPING
@@ -74,6 +75,11 @@ const DEVICE_TYPE_MAP = {
     traits: ['action.devices.traits.OnOff'],
     attributes: {},
   },
+  'retro-fit': {
+    googleType: 'action.devices.types.SWITCH',
+    traits: ['action.devices.traits.OnOff'],
+    attributes: {},
+  },
   'fan': {
     googleType: 'action.devices.types.FAN',
     traits: [
@@ -127,8 +133,8 @@ function resolveDeviceTopic(device) {
   if (id.startsWith('BSP') || type === 'plug' || type === 'switch') {
     return `smart-switch/command/${id}`;
   }
-  if (id.startsWith('BSQ') || type === 'touch-panel') {
-    return `touch-panel/${id}/switch/command`;
+  if (isPanelDevice(device)) {
+    return getPanelCommandTopic(device);
   }
   if (type === 'curtain') {
     return `touch-panel/${id}/switch/command`;
@@ -147,7 +153,7 @@ async function handleSync(requestId) {
 
   allDevices.forEach(device => {
     // Check if it's a touch panel with sub-devices
-    if (device.type === 'touch-panel' && device.subDevices && device.subDevices.length > 0) {
+    if (isPanelDevice(device) && device.subDevices && device.subDevices.length > 0) {
       device.subDevices.forEach(sd => {
         const typeConfig = DEVICE_TYPE_MAP[sd.type] || DEVICE_TYPE_MAP['switch'];
         
@@ -325,7 +331,7 @@ async function handleExecute(requestId, payload) {
 
         // Special handling for sub-devices (Touch Panel)
         if (subIndex !== null) {
-          mqttTopic = `touch-panel/${mainDeviceId}/switch/command`;
+          mqttTopic = getPanelCommandTopic(dbDevice);
           mqttPayload.type = 'switch';
           
           let executionStatus = { online: true };
@@ -393,10 +399,9 @@ async function handleExecute(requestId, payload) {
                 mqttPayload.value = 100;
                 dbUpdate.brightness = 255;
               } else {
-                mqttPayload.type = 'colour';
-                mqttPayload.colour = [0, 0, 0, 0];
+                mqttPayload.type = 'brightness';
+                mqttPayload.value = 0;
                 dbUpdate.brightness = 0;
-                dbUpdate.spectrumRgb = 0;
                 dbUpdate.effect = 'solid';
               }
             } else if (isPlug) {
@@ -413,14 +418,13 @@ async function handleExecute(requestId, payload) {
             if (isRgbw) {
               delete mqttPayload.entityId;
               if (execution.params.brightness === 0) {
-                mqttPayload.type = 'colour';
-                mqttPayload.colour = [0, 0, 0, 0];
+                mqttPayload.type = 'brightness';
+                mqttPayload.value = 0;
                 dbUpdate.on = false;
-                dbUpdate.spectrumRgb = 0;
                 dbUpdate.effect = 'solid';
               } else {
                 mqttPayload.type = 'brightness';
-                mqttPayload.value = execution.params.brightness;
+                mqttPayload.value = Math.round((execution.params.brightness / 100) * 255);
               }
             } else {
               mqttPayload.state = 'ON';

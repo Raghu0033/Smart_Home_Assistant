@@ -1,6 +1,7 @@
 import Automation from './Automation.js';
 import Device from '../devices/Device.js';
 import { publishToLight, publishToTopic } from '../../integrations/mqtt/mqttManager.js';
+import { getPanelCommandTopic, isPanelDevice } from '../devices/panelDevice.js';
 import { getState, updateState } from '../devices/deviceState.js';
 import { callService } from '../../integrations/homeassistant/ha-client.js';
 
@@ -208,6 +209,14 @@ async function executeAction(action, io) {
       return;
     }
 
+    if (device.type === 'water-tank') {
+      if (!['turn_on', 'turn_off'].includes(command)) return;
+      const state = command === 'turn_on' ? 'ON' : 'OFF';
+      await publishToTopic(`SMARTHOME/WLI/${targetDeviceId}/SWITCH`, state);
+      console.log(`[AUTOMATION ENGINE] Water tank ${targetDeviceId} motor -> ${state}`);
+      return;
+    }
+
     let topic = '';
     let payload = {};
 
@@ -257,12 +266,12 @@ async function executeAction(action, io) {
             payload = isRgbwLight ? { type: 'brightness', value: 100 } : { state: 'ON' };
             break;
           case 'turn_off':
-            payload = isRgbwLight ? { type: 'colour', colour: [0, 0, 0, 0] } : { state: 'OFF' };
+            payload = isRgbwLight ? { type: 'brightness', value: 0 } : { state: 'OFF' };
             break;
           case 'set_brightness': {
             const brightness = params?.brightness ?? 255;
             payload = isRgbwLight
-              ? { type: 'brightness', value: Math.round((brightness / 255) * 100) }
+              ? { type: 'brightness', value: Math.min(255, Math.max(0, Math.round(Number(brightness) || 0))) }
               : { state: 'ON', brightness };
             break;
           }
@@ -295,9 +304,9 @@ async function executeAction(action, io) {
       }
     }
 
-    if (targetDeviceId.startsWith('BSQ') || device.type === 'touch-panel') {
+    if (isPanelDevice(device)) {
       // Touch Panel Logic (Multi-channel)
-      topic = `touch-panel/${targetDeviceId}/switch/command`;
+      topic = getPanelCommandTopic(device);
       const idx = subDeviceIndex !== null && subDeviceIndex !== undefined ? Number(subDeviceIndex) : 0;
       const matchedSubDevice = Array.isArray(device.subDevices)
         ? device.subDevices.find(sd => Number(sd.index) === idx)
@@ -503,6 +512,11 @@ export async function evaluateAutomations(io) {
           ruleName: rule.name,
           triggeredAt: rule.lastTriggered,
           triggerCount: rule.triggerCount,
+          actions: rule.actions.map(action => ({
+            deviceId: action.targetDeviceId,
+            deviceName: action.targetDevice || action.targetDeviceId,
+            command: action.command
+          }))
         });
       }
     }

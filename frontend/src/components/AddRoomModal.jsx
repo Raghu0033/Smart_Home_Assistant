@@ -1,31 +1,26 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { ROOM_TYPES } from '../roomUtils';
 
+const roomIcons = Object.entries(ROOM_TYPES).map(([id, type]) => ({ id, name: type.label, src: type.src }));
 
-const roomIcons = [
-  { id: 'Home', name: 'Other', src: '/icons/icons/rooms_icons/Other.svg' },
-  { id: 'Sofa', name: 'Living Room', src: '/icons/icons/rooms_icons/LivingRoom.svg' },
-  { id: 'Bed', name: 'Bedroom', src: '/icons/icons/rooms_icons/MasterBedRoom.svg' },
-  { id: 'ChefHat', name: 'Kitchen', src: '/icons/icons/rooms_icons/Kitchen.svg' },
-  { id: 'Bath', name: 'Bathroom', src: '/icons/icons/rooms_icons/BathRoom.svg' },
-  { id: 'Building', name: 'Hall', src: '/icons/icons/rooms_icons/Hall.svg' },
-  { id: 'Trees', name: 'Balcony', src: '/icons/icons/rooms_icons/Balcony.svg' },
-  { id: 'Car', name: 'Garage', src: '/icons/icons/rooms_icons/Other.svg' },
-  { id: 'Gamepad', name: 'Theatre', src: '/icons/icons/rooms_icons/HomeTheatre.svg' },
-  { id: 'Lightbulb', name: 'Study', src: '/icons/icons/rooms_icons/StudyRoom.svg' },
-];
-
-const AddRoomModal = ({ isOpen, onClose, onAdd }) => {
+const AddRoomModal = ({ isOpen, onClose, onAdd, room = null, onSave }) => {
   const [formData, setFormData] = useState({
     name: '',
     icon: 'Home'
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData(room ? { name: room.name || '', icon: room.icon || 'Home' } : { name: '', icon: 'Home' });
+  }, [isOpen, room]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name) return;
-    onAdd(formData);
+    if (room) onSave(room._id, formData);
+    else onAdd(formData);
     onClose();
   };
 
@@ -33,7 +28,7 @@ const AddRoomModal = ({ isOpen, onClose, onAdd }) => {
     <div className="modal-overlay">
       <div className="modal-content animate-slide-up">
         <div className="modal-header">
-          <h2>Create New Room</h2>
+          <h2>{room ? 'Room Settings' : 'Create New Room'}</h2>
           <button className="close-btn" onClick={onClose}>&times;</button>
         </div>
         <form onSubmit={handleSubmit}>
@@ -63,7 +58,7 @@ const AddRoomModal = ({ isOpen, onClose, onAdd }) => {
               ))}
             </div>
           </div>
-          <button type="submit" className="submit-btn">Create Room</button>
+          <button type="submit" className="submit-btn">{room ? 'Save Changes' : 'Create Room'}</button>
         </form>
       </div>
 

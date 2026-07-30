@@ -1,12 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { getRoomOptionLabel } from '../roomUtils';
+import TouchPanelBacklight from './TouchPanelBacklight';
 
-const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device }) => {
+const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device, socket }) => {
   const API_BASE = `http://${window.location.hostname}:3000`;
   const [formData, setFormData] = useState({
+    deviceId: '',
     title: '',
     type: 'light',
     icon: '💡',
     room: 'Unassigned',
+    roomId: '',
     subDevices: []
   });
   const [rooms, setRooms] = useState([]);
@@ -14,10 +18,12 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device }) => {
   useEffect(() => {
     if (device) {
       setFormData({
+        deviceId: device.deviceId || '',
         title: device.title || '',
         type: device.type || 'light',
         icon: device.icon || '💡',
         room: device.room || 'Unassigned',
+        roomId: device.roomId || '',
         subDevices: device.subDevices || []
       });
     }
@@ -40,6 +46,7 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device }) => {
   }, []);
 
   if (!isOpen || !device) return null;
+  const isTouchPanel = device.type === 'touch-panel' || device.type === 'retro-fit' || (Array.isArray(device.subDevices) && device.subDevices.length > 0);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -51,13 +58,22 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device }) => {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content animate-slide-up">
+      <div className={`modal-content device-config-modal animate-slide-up ${isTouchPanel ? 'touch-panel-device-config' : ''}`}>
         <div className="modal-header">
-          <h2>Configure Device</h2>
-          <p className="subtitle">ID: {device.deviceId}</p>
+          <div className="device-config-heading">
+            <span className="device-config-kicker">DEVICE SETTINGS</span>
+            <h2>Edit Device</h2>
+            <p className="subtitle">{isTouchPanel ? 'Manage panel identity and hardware backlight' : 'Update identity, room, and appearance'}</p>
+          </div>
           <button className="close-btn" onClick={onClose}>&times;</button>
         </div>
-        <form onSubmit={handleSubmit}>
+        <form className="device-config-form" onSubmit={handleSubmit}>
+          <section className="device-config-section">
+            <div className="device-config-section-heading">
+              <span>01</span>
+              <div><strong>Device details</strong><small>Name, room and panel identity</small></div>
+            </div>
+            <div className="device-identity-grid">
           <div className="form-group">
             <label>Appliance Name</label>
             <input 
@@ -71,17 +87,31 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device }) => {
           <div className="form-group">
             <label>Assign to Room</label>
             <select 
-              value={formData.room}
-              onChange={(e) => setFormData({ ...formData, room: e.target.value })}
+              value={formData.roomId || formData.room}
+              onChange={(e) => {
+                const selectedRoom = rooms.find(room => room._id === e.target.value);
+                setFormData({ ...formData, roomId: selectedRoom?._id || '', room: selectedRoom?.name || e.target.value });
+              }}
               className="room-select"
             >
               <option value="Unassigned">Unassigned</option>
               {rooms.map(room => (
-                <option key={room.name} value={room.name}>{room.name}</option>
+                <option key={room._id || `${room.name}-${room.icon}`} value={room._id}>{getRoomOptionLabel(room)}</option>
               ))}
             </select>
           </div>
           <div className="form-group">
+            <label>Device ID</label>
+            <input
+              type="text"
+              placeholder="Enter the device ID"
+              value={formData.deviceId}
+              onChange={(e) => setFormData({ ...formData, deviceId: e.target.value })}
+              required
+            />
+            <small className="field-hint">This must match the ID used by the physical device.</small>
+          </div>
+          {!isTouchPanel && <div className="form-group">
             <label>Select Appliance Type Icon</label>
             <div className="icon-selector">
               {icons.map(icon => (
@@ -95,32 +125,23 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device }) => {
                 </button>
               ))}
             </div>
-          </div>
-
-          {device.type === 'touch-panel' && formData.subDevices.length > 0 && (
-            <div className="form-group">
-              <label>Switch & Fan Labels</label>
-              <div className="sub-devices-edit-list">
-                {formData.subDevices.map((sd, i) => (
-                  <div key={i} className="sub-device-edit-row">
-                    <span className="index-badge">{sd.index}</span>
-                    <input 
-                      type="text" 
-                      value={sd.label}
-                      placeholder={`${sd.type === 'fan' ? 'Fan' : 'Switch'} Name`}
-                      onChange={(e) => {
-                        const newSD = [...formData.subDevices];
-                        newSD[i].label = e.target.value;
-                        setFormData({ ...formData, subDevices: newSD });
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
+          </div>}
             </div>
+          </section>
+
+          {isTouchPanel && socket && (
+            <section className="device-config-section backlight-config-section">
+              <div className="device-config-section-heading">
+                <span>02</span>
+                <div><strong>Backlight settings</strong><small>Configure the physical panel illumination</small></div>
+              </div>
+              <TouchPanelBacklight device={device} socket={socket} />
+            </section>
           )}
 
-          <button type="submit" className="submit-btn">Complete Setup</button>
+          <div className="device-config-save-area">
+            <button type="submit" className="submit-btn">Save Changes</button>
+          </div>
         </form>
       </div>
 
@@ -131,7 +152,7 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device }) => {
           display: flex; align-items: center; justify-content: center; z-index: 1000;
         }
         .modal-content {
-          background: var(--bg-card); width: 95%; max-width: 480px; border-radius: 28px; padding: 32px;
+          background: var(--bg-card); width: 95%; max-width: 560px; border-radius: 28px; padding: 32px;
           box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
           max-height: 90vh; overflow-y: auto;
           position: relative;
@@ -150,11 +171,21 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device }) => {
         .form-group label { display: block; font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
         .form-group input, .room-select { width: 100%; padding: 14px 18px; border-radius: 14px; border: 1px solid var(--border); outline: none; background: var(--bg-secondary); transition: var(--transition); }
         .form-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1); }
+        .field-hint { display: block; margin-top: 6px; color: var(--text-muted); font-size: 11px; }
+        .sub-devices-edit-list { display: grid; gap: 12px; }
+        .sub-device-edit-row { padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-secondary); }
+        .sub-device-name-row { display: flex; align-items: center; gap: 10px; }
+        .sub-device-current-icon { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 38px; border-radius: 10px; background: var(--bg-card); font-size: 20px; }
+        .sub-device-icon-picker { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-top: 9px; }
+        .sub-device-icon-picker button { min-height: 32px; border: 1px solid transparent; border-radius: 8px; background: var(--bg-card); font-size: 16px; }
+        .sub-device-icon-picker button.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, var(--bg-card)); }
         
         .icon-selector { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
         .icon-btn { height: 48px; font-size: 20px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; transition: var(--transition); }
         .icon-btn:hover { background: var(--border); }
         .icon-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+        .touch-panel-device-config{max-width:525px}.touch-panel-device-config .modal-header{padding-top:18px;padding-bottom:16px}.touch-panel-device-config .device-config-kicker{display:block;margin-bottom:5px;color:var(--primary);font-size:9px;font-weight:800;letter-spacing:1px}.touch-panel-device-config .modal-header h2{margin:0 0 3px;font-size:21px}.touch-panel-device-config .subtitle{margin:0;font-family:inherit;font-size:11px;line-height:1.4}.touch-panel-device-config .close-btn{top:17px;width:36px;height:36px;border:1px solid var(--border);border-radius:10px;background:var(--bg-main)}.device-config-section{padding:18px;border:1px solid var(--border);border-radius:18px;background:var(--bg-main)}.device-config-section+.device-config-section{margin-top:16px}.device-config-section-heading{display:flex;align-items:center;gap:10px;margin-bottom:18px}.device-config-section-heading>span{width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;color:#fff;background:var(--primary);font-size:11px;font-weight:700}.device-config-section-heading strong,.device-config-section-heading small{display:block}.device-config-section-heading strong{color:var(--text-main);font-size:14px}.device-config-section-heading small{margin-top:2px;color:var(--text-muted);font-size:10px}.device-identity-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.device-identity-grid .form-group{margin-bottom:16px}.device-identity-grid .form-group:last-child{grid-column:1/-1}.backlight-config-section{position:relative}.backlight-config-section .device-config-section-heading{padding-right:82px}.backlight-config-section .touch-backlight{margin:0;padding:0;border:0;background:transparent;box-shadow:none}.backlight-config-section .touch-backlight-title{position:absolute;top:18px;right:18px;display:block;padding:0;border:0;background:transparent}.backlight-config-section .touch-backlight-title>div{display:none}.backlight-config-section .touch-backlight-title button{height:36px;padding:0 15px;border-radius:10px;font-size:11px}.backlight-config-section .touch-backlight-preview{grid-template-columns:repeat(2,125px);justify-content:center;gap:12px;margin-top:4px}.backlight-config-section .touch-backlight-preview div{min-height:56px;padding:10px;border-radius:11px}.backlight-config-section .touch-backlight-preview span{font-size:8px}.backlight-config-section .touch-backlight-preview strong{font-size:11px}.backlight-config-section .touch-backlight-grid label:last-child{grid-column:1/-1}
         
         .submit-btn { width: 100%; padding: 16px; background: var(--primary); color: white; border-radius: 16px; font-weight: 800; font-size: 15px; margin-top: 10px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); transition: var(--transition); }
         .submit-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4); }
@@ -167,6 +198,7 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device }) => {
 
         .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
         @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @media(max-width:640px){.device-identity-grid{grid-template-columns:1fr}.device-identity-grid .form-group:last-child{grid-column:auto}.touch-panel-device-config{padding:22px}.touch-panel-device-config .modal-header{top:-22px;margin-left:-22px;margin-right:-22px;padding-left:22px;padding-right:22px}}
       `}</style>
     </div>
   );

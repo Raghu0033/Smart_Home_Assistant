@@ -13,12 +13,17 @@
 }
 
 @media (max-width: 768px) {
+  .audio-devices-header {
+    text-align: center;
+  }
+
   .audio-devices-grid {
     grid-template-columns: 1fr;
     gap: 1rem;
   }
   
   .audio-devices-header h2 {
+    justify-content: center;
     font-size: 1.5rem !important; /* Tailwind text-3xl is 1.875rem, override to 1.5rem */
   }
   

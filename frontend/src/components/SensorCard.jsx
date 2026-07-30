@@ -1,7 +1,7 @@
 import React from 'react';
 
 
-const SensorCard = ({ sensor, onRemove }) => {
+const SensorCard = ({ sensor, onRemove, onEdit, approvalStatus = null, onApprove = null, onReject = null }) => {
   const formatValue = (val) => {
     if (val === null || val === undefined) return '--';
     
@@ -45,20 +45,29 @@ const SensorCard = ({ sensor, onRemove }) => {
   const isLive = sensor.lastUpdated && (new Date() - new Date(sensor.lastUpdated)) < 60000;
 
   return (
-    <div className="glass sensor-widget-card animate-fade-in">
+    <div className={`glass sensor-widget-card animate-fade-in ${approvalStatus ? 'approval-pending-card' : ''}`} id={sensor.approvalRequestId ? `approval-card-${sensor.approvalRequestId}` : undefined}>
       <div className="widget-header">
         <div className="sensor-brand">
           <div className={`status-indicator ${isLive ? 'online' : 'stale'}`}></div>
           <span className="room-label">{sensor.room}</span>
         </div>
-        <button className="widget-delete" onClick={() => onRemove(sensor._id)}>
-          <img src="/icons/icons/Delete-White.svg" alt="Delete" style={{width: 14, height: 14}} />
-        </button>
+        <div className="sensor-card-actions">
+          {approvalStatus && <span className={`approval-card-badge ${approvalStatus}`}>{approvalStatus === 'pending' ? 'Waiting for approval' : 'Approved'}</span>}
+          {!approvalStatus && <>
+          <button className="widget-edit" onClick={() => onEdit(sensor)} title="Sensor settings">
+            <img src="/icons/icons/Settings-White.svg" alt="Settings" style={{width: 14, height: 14}} />
+          </button>
+          <button className="widget-delete" onClick={() => onRemove(sensor._id)}>
+            <img src="/icons/icons/Delete-White.svg" alt="Delete" style={{width: 14, height: 14}} />
+          </button>
+          </>}
+        </div>
       </div>
 
       <div className="widget-main">
+        {approvalStatus && sensor.requestedByName && <div className="approval-requester">Requested by {sensor.requestedByName}</div>}
         <div className="sensor-title-group">
-          <h3>{sensor.name}</h3>
+          <h3><span className="sensor-custom-icon">{sensor.icon || '📡'}</span>{sensor.name}</h3>
           <div className="topic-pill">
             <img src="/icons/icons/More-White.svg" alt="#" style={{width: 10, height: 10}} />
             <code>{sensor.topic.split('/').pop()}</code>
@@ -79,15 +88,20 @@ const SensorCard = ({ sensor, onRemove }) => {
       <div className="widget-footer">
         <div className="update-status">
           <img src="/icons/icons/Timer-White.svg" alt="Clock" style={{width: 12, height: 12}} />
-          <span>{getTimeAgo(sensor.lastUpdated)}</span>
+          <span>{approvalStatus ? 'Not added yet' : getTimeAgo(sensor.lastUpdated)}</span>
         </div>
         <div className="sensor-type-icon">
           <img src="/icons/icons/WIFI-White.svg" alt="Radio" style={{width: 16, height: 16}} />
         </div>
       </div>
+      {approvalStatus === 'pending' && onApprove && onReject && (
+        <div className="inline-approval-actions">
+          <button className="reject" onClick={() => onReject()}>Reject</button>
+          <button className="approve" onClick={() => onApprove()}>Approve</button>
+        </div>
+      )}
     </div>
   );
 };
 
 export default SensorCard;
-

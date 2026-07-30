@@ -913,6 +913,7 @@
 
   .music-content-header {
     margin-bottom: 1rem;
+    text-align: center;
   }
 
   .music-content-header h1 {
@@ -1132,4 +1133,3 @@
     gap: 1.25rem;
   }
 }
-

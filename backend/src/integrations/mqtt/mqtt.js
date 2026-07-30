@@ -1,14 +1,17 @@
 import mqtt from 'mqtt';
-import { setMqttClient } from './mqttManager.js';
+import { getWaterLevelState, publishToTopic, setMqttClient, setWaterLevelState } from './mqttManager.js';
 import { getState, updateState } from '../../modules/devices/deviceState.js';
 import { updateSensorData, evaluateAutomations, getSensorData, isEngineExecuting } from '../../modules/automations/automationEngine.js';
 import Device from '../../modules/devices/Device.js';
 import Sensor from '../../modules/sensors/Sensor.js';
+import WaterLevelConfig from '../../modules/devices/WaterLevelConfig.js';
 import { publishStateToHA, syncAllDevicesToHA, handleHomeAssistantCommand, publishSensorStateToHA } from '../homeassistant/ha-discovery.js';
 import { callService, cachedHaStates } from '../homeassistant/ha-client.js';
 import { handlePresenceChange } from '../../modules/audio/followMeAudio.js';
 import { handleTrigger } from '../../modules/staircase/staircaseService.js';
 import { escapeRegExp } from './topicUtils.js';
+import { resolveTouchPanelState } from '../../modules/devices/touchPanelCommandGuard.js';
+import { notifyTouchPanelPower, notifyTouchPanelSpeed } from '../../modules/devices/touchPanelStatusWaiter.js';
 
 const DEBUG_MQTT = process.env.MQTT_DEBUG === 'true';
 
@@ -56,21 +59,35 @@ export const connectMQTT = (io) => {
       'smarthome/+/+/status', 
       'smarthome/+/+/log', 
       'smart-switch/data',
+      'smart-switch/+/#',
       'smart-switch/+/data',
       'smart-switch/+/ping/status',
+      'three-phase/+/#',
       'three-phase/+/ping/status',
       'energy-meter/three-phase',
       'energy-meter/single-phase',
       'touch-panel/+/switch/status',
+      'touch-panel/+/backlight/status',
       'touch-panel/+/ping/status',
+      'touch-panel/+/#',
+      'node-switch/+/switch/status',
+      'node-switch/+/backlight/status',
+      'node-switch/+/ping/status',
+      'node-switch/+/#',
       'smart_home/rgbw/+/status',
       'smart_home/rgbw/+/debug',
       'rgbw-light/+/light/status',
       'rgbw-light/+/light/debug',
+      'rgbw-light/+/#',
       'smarthome/ha/+/command',
       'smart_home/staircase/trigger',
       'tunable-light/+/light/status',
-      'tunable-light/+/status'
+      'tunable-light/+/status',
+      'tunable-light/+/#',
+      'SMARTHOME/WLI/+/TANK',
+      'SMARTHOME/WLI/+/BATTERY',
+      'SMARTHOME/WLI/+/MOTOR',
+      'SMARTHOME/WLI/+/ALERT'
     ]);
 
     // Dynamic boot sync to ensure all devices appear in Home Assistant
@@ -100,12 +117,66 @@ export const connectMQTT = (io) => {
     }
   });
 
-  mqttClient.on('message', async (topic, message) => {
+  mqttClient.on('message', async (topic, message, packet) => {
     const payload = message.toString();
     if (DEBUG_MQTT) {
       console.log('[MQTT DEBUG] received message', { topic, payload });
     }
     const topicParts = topic.split('/');
+
+    // Water level indicator retained telemetry.
+    // SMARTHOME/WLI/{deviceId}/{TANK|BATTERY|MOTOR}
+    if (
+      topicParts[0] === 'SMARTHOME' &&
+      topicParts[1] === 'WLI' &&
+      topicParts.length === 4 &&
+      ['TANK', 'BATTERY', 'MOTOR', 'ALERT'].includes(topicParts[3])
+    ) {
+      const deviceId = String(topicParts[2] || '').trim();
+      const metric = topicParts[3].toLowerCase();
+      const value = metric === 'motor'
+        ? payload.trim().toUpperCase()
+        : metric === 'alert' ? payload.trim() : Number(payload);
+
+      const isValidMotorState = metric === 'motor' && ['ON', 'OFF'].includes(value);
+      const isValidAlert = metric === 'alert';
+      if (deviceId && (isValidMotorState || isValidAlert || (!['motor', 'alert'].includes(metric) && Number.isFinite(value)))) {
+        setWaterLevelState(deviceId, metric, value);
+        if (metric !== 'alert') {
+          const lastPacketAt = new Date().toISOString();
+          setWaterLevelState(deviceId, 'lastPacketAt', lastPacketAt);
+          setWaterLevelState(deviceId, `${metric}UpdatedAt`, lastPacketAt);
+          io.emit('water_level_update', { deviceId, metric: 'lastPacketAt', value: lastPacketAt });
+          io.emit('water_level_update', { deviceId, metric: `${metric}UpdatedAt`, value: lastPacketAt });
+        }
+        io.emit('water_level_update', { deviceId, metric, value });
+
+        if (['tank', 'battery'].includes(metric)) {
+          updateSensorData({ [`${deviceId}_${metric}`]: value });
+          io.emit('sensor_data_update', getSensorData());
+          await evaluateAutomations(io);
+        }
+
+        if (metric === 'tank') {
+          try {
+            const automation = await WaterLevelConfig.findOne({ deviceId: deviceId.toUpperCase(), enabled: true });
+            const currentMotor = getWaterLevelState(deviceId)?.motor;
+            let requestedState = null;
+            if (automation && value >= automation.offLevel && currentMotor === 'ON') requestedState = 'OFF';
+            if (automation && value <= automation.onLevel && currentMotor === 'OFF') requestedState = 'ON';
+
+            if (requestedState) {
+              await publishToTopic(`SMARTHOME/WLI/${deviceId}/SWITCH`, requestedState);
+              console.log(`[WLI AUTO] ${deviceId}: water ${value}% -> motor ${requestedState}`);
+              io.emit('wli_automation_action', { deviceId, state: requestedState, waterLevel: value });
+            }
+          } catch (err) {
+            console.error(`[WLI AUTO] Failed for ${deviceId}:`, err.message);
+          }
+        }
+      }
+      return;
+    }
     
     // Intercept Home Assistant Proxy commands first and completely ignore any other HA proxy status/log messages to prevent loop feedback
     if (topicParts[0] === 'smarthome' && topicParts[1] === 'ha') {
@@ -146,62 +217,68 @@ export const connectMQTT = (io) => {
       deviceId = topicParts[1] !== 'data' ? topicParts[1] : (data.entityId || data.deviceId);
     } else if (topic === 'energy-meter/three-phase' || topic === 'energy-meter/single-phase') {
       deviceId = data.DeviceID;
-    } else if (topicParts[0] === 'touch-panel') {
+    } else if (topicParts[0] === 'touch-panel' || topicParts[0] === 'node-switch') {
       deviceId = topicParts[1];
     } else if (topicParts[0] === 'smart_home' && topicParts[1] === 'rgbw') {
       deviceId = topicParts[2];
     } else if (topicParts[0] === 'rgbw-light' && topicParts[2] === 'light' && topicParts[3] === 'status') {
       deviceId = topicParts[1];
+      if (data && data.state !== undefined) {
+        const normalizedState = String(data.state).trim().toLowerCase();
+        if (['on', 'true', '1', 'yes'].includes(normalizedState)) data.on = true;
+        if (['off', 'false', '0', 'no'].includes(normalizedState)) data.on = false;
+      }
+      if (data && data.brightness !== undefined) {
+        // RGBW firmware reports native 8-bit brightness (0-255).
+        data.brightness = Math.min(255, Math.max(0, Math.round(Number(data.brightness) || 0)));
+      }
+      if (data && Array.isArray(data.colour) && data.colour.length >= 3) {
+        const [r, g, b] = data.colour.map(value => Math.min(255, Math.max(0, Number(value) || 0)));
+        data.spectrumRgb = (r << 16) | (g << 8) | b;
+      }
+      if (data && String(data.type || '').toLowerCase() === 'animations' && data.model !== undefined) {
+        data.effect = String(data.model);
+      }
     } else if (topicParts[0] === 'tunable-light') {
       deviceId = topicParts[1];
       let rawVal = undefined;
-      
-      console.log(`[TUNABLE LIGHT] Received status for ${deviceId}. Raw payload:`, payload);
+      const isLightStatus = topicParts[2] === 'light' && topicParts[3] === 'status';
 
-      // Extract the raw PWM value from the payload
-      if (data.type && data.type.toLowerCase() === 'brightness' && data.value !== undefined) {
-        rawVal = Number(data.value);
-      } else if (data.brightness !== undefined) {
-        rawVal = Number(data.brightness);
-      }
-
-      if (rawVal !== undefined) {
-        const parseBooleanLike = (value) => {
-          if (typeof value === 'boolean') return value;
-          if (typeof value === 'number') return value !== 0;
-          if (typeof value === 'string') {
-            const normalized = value.trim().toLowerCase();
-            if (['true', '1', 'on', 'yes', 'enable', 'enabled'].includes(normalized)) return true;
-            if (['false', '0', 'off', 'no', 'disable', 'disabled'].includes(normalized)) return false;
-          }
-          return undefined;
-        };
-
-        const stateFromPayload = parseBooleanLike(data.value) ?? parseBooleanLike(data.state) ?? parseBooleanLike(data.on);
-
-        if (stateFromPayload === false) {
-          data.brightness = 0;
-          data.on = false;
-          console.log(`[TUNABLE LIGHT] ${deviceId} is OFF -> brightness set to 0`);
-        } else {
-          let pct = Math.min(100, Math.max(0, Number(rawVal)));
-
-          // Frontend expects 0-255 scale
-          data.brightness = Math.round((pct / 100) * 255);
-          data.on = stateFromPayload ?? (pct > 0);
-          console.log(`[TUNABLE LIGHT] ${deviceId} ON: rawVal=${rawVal} -> pct=${pct}% -> 255scale=${data.brightness} -> on=${data.on}`);
+      // Only the hardware light/status report is authoritative. Command echoes
+      // must not change the UI power state.
+      if (isLightStatus) {
+        console.log(`[TUNABLE LIGHT] Received status for ${deviceId}. Raw payload:`, payload);
+        if (String(data?.type || '').toLowerCase() === 'brightness' && data.value !== undefined) {
+          rawVal = Number(data.value);
+        } else if (data?.value !== undefined) {
+          rawVal = Number(data.value);
+        } else if (data?.brightness !== undefined) {
+          rawVal = Number(data.brightness);
         }
-      } else {
-        console.warn(`[TUNABLE LIGHT] Could not parse brightness from payload for ${deviceId}`);
+
+        if (Number.isFinite(rawVal)) {
+          const pct = Math.min(100, Math.max(0, rawVal));
+          data.brightness = Math.round((pct / 100) * 255);
+          data.on = pct > 0;
+          data.brightnessReportedAt = new Date();
+          console.log(`[TUNABLE LIGHT] ${deviceId}: ${pct}% -> ${data.on ? 'ON' : 'OFF'}`);
+        }
       }
     }
 
     if (deviceId && data) {
       deviceId = String(deviceId).trim();
       try {
-        const updates = { lastSeen: new Date() };
+        // Any fresh message identified as belonging to this device proves that
+        // it is connected. Ignore retained broker messages: those can be old
+        // and must not make an offline device appear connected after reload.
+        const isHeartbeat = packet?.retain !== true && !topicParts.includes('command');
+        const heartbeatAt = isHeartbeat ? new Date() : null;
+        const updates = {};
+        if (heartbeatAt) updates.lastSeen = heartbeatAt;
         if (data.lux !== undefined) updates.lastLux = data.lux;
         if (data.brightness !== undefined) updates.brightness = data.brightness;
+        if (data.brightnessReportedAt !== undefined) updates.brightnessReportedAt = data.brightnessReportedAt;
         if (data.on !== undefined) updates.on = data.on;
         
         // Electrical parameters from smart-switch/data
@@ -240,19 +317,40 @@ export const connectMQTT = (io) => {
         if (data.PhaseAngle !== undefined) updates.phaseAngle = Number(data.PhaseAngle);
 
         // Touch Panel Switch/Fan Status Parsing
-        if (topic.includes('/switch/status') || topic.includes('/ping/status')) {
+        if (topic.includes('/backlight/status') && Array.isArray(data.bklt) && data.bklt.length >= 9) {
+          const bklt = data.bklt.map(Number);
+          if (bklt.every(Number.isFinite)) {
+            updates.touchPanelBacklight = {
+              onColor: bklt.slice(0, 3),
+              offColor: bklt.slice(3, 6),
+              onBrightness: bklt[6],
+              transitionSeconds: bklt[7],
+              offBrightness: bklt[8]
+            };
+          }
+        }
+
+        if (
+          (topicParts[0] === 'touch-panel' || topicParts[0] === 'node-switch')
+          && (topic.includes('/switch/status') || topic.includes('/ping/status'))
+        ) {
           if (data.switch || data.dimmer) {
             const device = await Device.findOne({ deviceId });
             if (!device || !device.subDevices) return;
             
-            device.lastSeen = new Date();
+            if (isHeartbeat) device.lastSeen = heartbeatAt;
 
             // 1. Sync Switch & Fan "ON" states
             if (data.switch && Array.isArray(data.switch)) {
               data.switch.forEach((status, i) => {
                 const index = i + 1;
                 const sd = device.subDevices.find(s => s.index === index);
-                if (sd) sd.on = (status === 1);
+                const reportedOn = Number(status) === 1;
+                if (topic.includes('/switch/status')) {
+                  notifyTouchPanelPower(deviceId, index, reportedOn);
+                }
+                const resolvedOn = resolveTouchPanelState(deviceId, index, reportedOn);
+                if (sd && resolvedOn !== null) sd.on = resolvedOn;
               });
             }
 
@@ -262,7 +360,12 @@ export const connectMQTT = (io) => {
               data.dimmer.forEach((speed, i) => {
                 if (fans[i]) {
                   const sVal = Number(speed);
-                  if (sVal > 0) fans[i].speed = sVal;
+                  if (sVal > 0) {
+                    fans[i].speed = sVal;
+                    if (topic.includes('/switch/status')) {
+                      notifyTouchPanelSpeed(deviceId, fans[i].index, sVal);
+                    }
+                  }
                 }
               });
             }
@@ -271,7 +374,10 @@ export const connectMQTT = (io) => {
             const updated = await device.save();
             
             // Emit the fully updated device to frontend
-            io.emit('device_state_update', updated);
+            io.emit('device_state_update', {
+              ...updated.toObject(),
+              ...(isHeartbeat ? { connectivityStatus: 'connected', heartbeatAt } : {})
+            });
 
             // Sync updated states with Home Assistant
             try {
@@ -283,32 +389,46 @@ export const connectMQTT = (io) => {
           }
         }
 
-        // Map relay status: PDF uses "relayStatus":"ON" or "switch":[1]
-        if (data.relayStatus !== undefined) updates.on = data.relayStatus === 'ON';
-        if (data.switch !== undefined && Array.isArray(data.switch)) updates.on = data.switch[0] === 1;
-        if (data.state !== undefined) updates.on = data.state === 'ON';
+        // Smart plug ping status:
+        // smart-switch/{deviceId}/ping/status {"switch":[0]} => OFF
+        // smart-switch/{deviceId}/ping/status {"switch":[1]} => ON
+        if (data.relayStatus !== undefined) updates.on = String(data.relayStatus).toUpperCase() === 'ON';
+        if (Array.isArray(data.switch) && data.switch.length > 0) {
+          const switchValue = data.switch[0];
+          updates.on = switchValue === true
+            || Number(switchValue) === 1
+            || String(switchValue).trim().toUpperCase() === 'ON';
+        }
+        if (data.state !== undefined) updates.on = String(data.state).toUpperCase() === 'ON';
         if (data.on !== undefined) updates.on = data.on;
         
         if (data.effect !== undefined) updates.effect = data.effect;
-        if (data.color !== undefined) {
-          const [r, g, b] = data.color;
+        if (data.model !== undefined && String(data.type || '').toLowerCase() === 'animations') {
+          updates.effect = String(data.model);
+        }
+        const reportedColour = Array.isArray(data.colour) ? data.colour : data.color;
+        if (Array.isArray(reportedColour) && reportedColour.length >= 3) {
+          const [r, g, b] = reportedColour.map(value =>
+            Math.min(255, Math.max(0, Math.round(Number(value) || 0)))
+          );
           updates.spectrumRgb = (r << 16) | (g << 8) | b;
         }
 
         // Timer parsing from PDF format: {"timer":{"remaining":30,"action":10}}
-        let isStatusPing = data.relayStatus !== undefined || data.switch !== undefined || data.state !== undefined;
-        
         if (data.timer) {
           updates.timerRemaining = data.timer.remaining;
           updates.timerAction = String(data.timer.action);
-        } else if (isStatusPing) {
-          updates.timerRemaining = 0;
-          updates.timerAction = null;
         }
         
         const updatedDevice = await Device.findOneAndUpdate({ deviceId }, updates, { returnDocument: 'after' });
         if (updatedDevice) {
-          io.emit('device_state_update', updatedDevice);
+          io.emit('device_state_update', {
+            ...updatedDevice.toObject(),
+            ...(isHeartbeat ? { connectivityStatus: 'connected', heartbeatAt } : {}),
+            ...(isHeartbeat && data.brightness !== undefined
+              ? { brightnessReportedAt: heartbeatAt }
+              : {})
+          });
           try {
             await publishStateToHA(updatedDevice);
           } catch (haErr) {
@@ -448,6 +568,14 @@ export const connectMQTT = (io) => {
   mqttClient.on('error', (err) => {
     console.error('MQTT error:', err);
     io.emit('mqtt_status', { status: 'Error' });
+  });
+
+  mqttClient.on('offline', () => {
+    io.emit('mqtt_status', { status: 'Offline' });
+  });
+
+  mqttClient.on('reconnect', () => {
+    io.emit('mqtt_status', { status: 'Connecting' });
   });
 
   return mqttClient;

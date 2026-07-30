@@ -22,6 +22,10 @@ const sensorSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  icon: {
+    type: String,
+    default: '📡',
+  },
   lastUpdated: {
     type: Date,
     default: Date.now,

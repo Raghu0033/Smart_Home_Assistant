@@ -2,6 +2,7 @@ import express from 'express';
 import { smarthome } from 'actions-on-google';
 import Device from '../../modules/devices/Device.js';
 import { publishToTopic } from '../mqtt/mqttManager.js';
+import { getPanelCommandTopic, isPanelDevice } from '../../modules/devices/panelDevice.js';
 
 const router = express.Router();
 
@@ -48,6 +49,7 @@ const getGoogleDeviceType = (type) => {
     case 'curtain':
       return 'action.devices.types.BLINDS';
     case 'touch-panel':
+    case 'retro-fit':
       return 'action.devices.types.SWITCH'; // For individual subdevices
     default:
       return 'action.devices.types.SWITCH';
@@ -60,7 +62,7 @@ app.onSync(async (body, headers) => {
   const googleDevices = [];
 
   for (const device of devices) {
-    if (device.type === 'touch-panel' && device.subDevices && device.subDevices.length > 0) {
+    if (isPanelDevice(device) && device.subDevices && device.subDevices.length > 0) {
       // Expose each touch panel subdevice as a distinct switch/fan to Google
       for (const sd of device.subDevices) {
         googleDevices.push({
@@ -201,7 +203,9 @@ app.onExecute(async (body, headers) => {
           
           if (commandType === 'action.devices.commands.OnOff') {
             const on = params.on;
-            const topic = `touch-panel/${deviceId}/switch/command`;
+            const panelDevice = await Device.findOne({ deviceId });
+            if (!panelDevice) continue;
+            const topic = getPanelCommandTopic(panelDevice);
             
             await publishToTopic(topic, {
               entityId: deviceId,
@@ -228,7 +232,7 @@ app.onExecute(async (body, headers) => {
 
           // SPECIAL HANDLING FOR CURTAINS
           if (device.type === 'curtain') {
-            const topic = `touch-panel/${device.deviceId}/switch/command`;
+            const topic = getPanelCommandTopic(device);
             let curtainValue = '10'; // Default to stop/off
 
             if (commandType === 'action.devices.commands.OpenClose') {
