@@ -137,7 +137,7 @@ function resolveDeviceTopic(device) {
     return getPanelCommandTopic(device);
   }
   if (type === 'curtain') {
-    return `touch-panel/${id}/switch/command`;
+    return `node-switch/${id}/switch/command`;
   }
 
   return `smarthome/${type}/${id}/command`;

@@ -374,7 +374,7 @@ async function executeAction(action, io) {
       device.on = (command === 'turn_on');
     } else if (device.type === 'curtain') {
       // Specialized Curtain/Touch-Panel Logic (e.g. BS900000001)
-      topic = `touch-panel/${targetDeviceId}/switch/command`;
+      topic = `node-switch/${targetDeviceId}/switch/command`;
       if (command === 'turn_on' || command === 'turn_off') {
         const startValue = command === 'turn_on' ? '11' : '21';
         const stopValue = command === 'turn_on' ? '10' : '20';

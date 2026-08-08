@@ -103,9 +103,12 @@ const MemberCard = ({ member, rooms, onSaved, notify }) => {
   useEffect(() => setDraft(member), [member]);
 
   const save = async () => {
+    const phone = String(draft.phone || '').trim();
+    if (!phone) return notify('Phone number is required for member profiles');
+
     const response = await authRequest(`/api/auth/members/${member.id}`, {
       method: 'PUT',
-      body: JSON.stringify(draft)
+      body: JSON.stringify({ ...draft, phone })
     });
     const data = await response.json();
     if (!response.ok) return notify(data.message || 'Could not update member');
@@ -213,7 +216,10 @@ const ProfilePage = ({ profile, onProfileChange, notify, onOpenApproval, onLogou
   }, [showAddMember]);
 
   const saveSelf = async () => {
-    const response = await authRequest('/api/auth/me', { method: 'PUT', body: JSON.stringify(selfDraft) });
+    const phone = String(selfDraft?.phone || '').trim();
+    if (!phone) return notify('Phone number is required');
+
+    const response = await authRequest('/api/auth/me', { method: 'PUT', body: JSON.stringify({ ...selfDraft, phone }) });
     const data = await response.json();
     if (!response.ok) return notify(data.message || 'Could not update profile');
     onProfileChange(data);
@@ -231,7 +237,10 @@ const ProfilePage = ({ profile, onProfileChange, notify, onOpenApproval, onLogou
 
   const addMember = async event => {
     event.preventDefault();
-    const response = await authRequest('/api/auth/members', { method: 'POST', body: JSON.stringify(newMember) });
+    const phone = String(newMember.phone || '').trim();
+    if (!phone) return notify('Phone number is required');
+
+    const response = await authRequest('/api/auth/members', { method: 'POST', body: JSON.stringify({ ...newMember, phone }) });
     const data = await response.json();
     if (!response.ok) return notify(data.message || 'Could not create member');
     setMembers(previous => [...previous, data]);
@@ -269,7 +278,7 @@ const ProfilePage = ({ profile, onProfileChange, notify, onOpenApproval, onLogou
           <div className="profile-form-grid">
             <label>Display name<input value={selfDraft?.name || ''} onChange={event => setSelfDraft({ ...selfDraft, name: event.target.value })} /></label>
             <label>Username<input value={profile.username} disabled /></label>
-            <label>Phone<input value={selfDraft?.phone || ''} onChange={event => setSelfDraft({ ...selfDraft, phone: event.target.value })} /></label>
+            <label>Phone<input required value={selfDraft?.phone || ''} onChange={event => setSelfDraft({ ...selfDraft, phone: event.target.value })} /></label>
             <GenderField value={selfDraft?.gender} onChange={gender => setSelfDraft({ ...selfDraft, gender })} />
           </div>
           <AvatarPicker value={selfDraft?.avatar} onChange={avatar => setSelfDraft({ ...selfDraft, avatar })} />
@@ -299,7 +308,7 @@ const ProfilePage = ({ profile, onProfileChange, notify, onOpenApproval, onLogou
               <div className="profile-form-grid">
                 <label>Name<input required value={newMember.name} onChange={event => setNewMember({ ...newMember, name: event.target.value })} /></label>
                 <label>Login username<input required value={newMember.username} onChange={event => setNewMember({ ...newMember, username: event.target.value })} /></label>
-                <label>Phone (optional)<input value={newMember.phone} onChange={event => setNewMember({ ...newMember, phone: event.target.value })} /></label>
+                <label>Phone<input required value={newMember.phone} onChange={event => setNewMember({ ...newMember, phone: event.target.value })} /></label>
                 <label>Temporary password<input required minLength="8" type="password" value={newMember.password} onChange={event => setNewMember({ ...newMember, password: event.target.value })} /></label>
                 <GenderField value={newMember.gender} onChange={gender => setNewMember({ ...newMember, gender })} />
               </div>

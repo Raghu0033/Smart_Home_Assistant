@@ -6,6 +6,7 @@ const DEVICE_TYPES = [
   { label: 'Smart Plug', type: 'plug', iconSrc: '/icons/devices/plug.png', description: 'Connected power outlet' },
   { label: 'RGBW Light', type: 'rgbw', iconSrc: '/icons/devices/rgbw.png', description: 'Colour and white light' },
   { label: 'Curtain', type: 'curtain', iconSrc: '/icons/devices/curtain.png', description: 'Motorised curtain' },
+  { label: 'IR Blaster', type: 'ir-blaster', iconSrc: '/icons/devices/ir_blaster.svg', description: 'Infrared remote hub for AC and appliances' },
   { label: '3-Phase Auditor', type: 'three-phase', iconSrc: '/icons/devices/auditor.png', description: 'Three-phase energy meter' },
   { label: 'Single Phase Auditor', type: 'single-phase', iconSrc: '/icons/devices/auditor.png', description: 'Single-phase energy meter' },
   { label: 'Touch Panel', type: 'touch-panel', iconSrc: '/icons/devices/touch_panel.png', description: 'Multi-channel wall panel' },
@@ -15,6 +16,9 @@ const DEVICE_TYPES = [
 
 const MAX_PANEL_CHANNELS = 20;
 const MAX_FANS = 4;
+const IR_COMPANY_OPTIONS = ['DAIKIN'];
+const IR_MODEL_OPTIONS = ['CASSETTE', 'SPLIT'];
+const IR_MODEL_NO_OPTIONS = ['BRC91A157', 'ARC484B32'];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
 
@@ -57,6 +61,9 @@ const initialForm = (initialRoom, initialType) => ({
   room: initialRoom?.name || 'Unassigned',
   roomId: initialRoom?._id || '',
   deviceId: '',
+  companyName: 'DAIKIN',
+  model: 'CASSETTE',
+  modelNo: 'BRC91A157',
   numSwitches: 4,
   numFans: 0,
   tankCapacity: ''
@@ -99,6 +106,7 @@ const ProvisioningModal = ({ isOpen, onClose, onFinish, initialType = null, init
     [formData.label]
   );
   const isTouchPanel = ['touch-panel', 'retro-fit'].includes(selectedType?.type);
+  const isIRBlaster = selectedType?.type === 'ir-blaster';
   const isWaterTank = selectedType?.type === 'water-tank';
   const identityIsValid = Boolean(
     formData.title.trim()
@@ -117,6 +125,7 @@ const ProvisioningModal = ({ isOpen, onClose, onFinish, initialType = null, init
     if (type === 'retro-fit') return `node-switch/${deviceId}/switch/status`;
     if (type === 'rgbw') return `rgbw-light/${deviceId}/light/command`;
     if (type === 'tunable-light') return `tunable-light/${deviceId}/light/command`;
+    if (type === 'ir-blaster') return `ir-blaster/${deviceId}/command`;
     if (type === 'water-tank') return `SMARTHOME/WLI/${deviceId}/TANK`;
     return `smarthome/${type}/${deviceId}`;
   };
@@ -157,6 +166,12 @@ const ProvisioningModal = ({ isOpen, onClose, onFinish, initialType = null, init
         roomId: formData.roomId || undefined,
         isConfigured: true,
         topic: getDefaultTopic(selectedType.type, deviceId),
+        ...(isIRBlaster ? {
+          companyName: formData.companyName,
+          model: formData.model,
+          modelNo: formData.modelNo,
+          receiverDeviceId: deviceId
+        } : {}),
         tankCapacity: isWaterTank ? Number(formData.tankCapacity) : undefined,
         subDevices: isTouchPanel ? subDevices : []
       });
@@ -258,6 +273,37 @@ const ProvisioningModal = ({ isOpen, onClose, onFinish, initialType = null, init
                         onChange={event => setFormData({ ...formData, deviceId: event.target.value })}
                       />
                     </label>
+                    {isIRBlaster && (
+                      <>
+                        <label className="field">
+                          <span>Company Name</span>
+                          <select
+                            value={formData.companyName}
+                            onChange={event => setFormData({ ...formData, companyName: event.target.value })}
+                          >
+                            {IR_COMPANY_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Model</span>
+                          <select
+                            value={formData.model}
+                            onChange={event => setFormData({ ...formData, model: event.target.value })}
+                          >
+                            {IR_MODEL_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Model No</span>
+                          <select
+                            value={formData.modelNo}
+                            onChange={event => setFormData({ ...formData, modelNo: event.target.value })}
+                          >
+                            {IR_MODEL_NO_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        </label>
+                      </>
+                    )}
                     {!isWaterTank && (
                       <label className="field">
                         <span>Room</span>

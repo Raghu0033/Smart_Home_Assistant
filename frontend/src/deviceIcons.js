@@ -3,6 +3,7 @@ const DEVICE_ICON_SOURCES = {
   plug: '/icons/devices/plug.png',
   rgbw: '/icons/devices/rgbw.png',
   curtain: '/icons/devices/curtain.png',
+  'ir-blaster': '/icons/devices/ir_blaster.svg',
   auditor: '/icons/devices/auditor.png',
   'touch-panel': '/icons/devices/touch_panel.png',
   'retro-fit': '/icons/icons/switch.png',
@@ -21,6 +22,7 @@ const normalizeDeviceType = (device) => {
 
   if (type === 'retro-fit' || device.panelType === 'retro-fit') return 'retro-fit';
   if (type === 'touch-panel' || hasSubDevices || /^BS(?:Q|4)/i.test(deviceId)) return 'touch-panel';
+  if (type === 'ir-blaster' || type === 'ir_blaster' || title.includes('ir blaster') || title.includes('ac remote')) return 'ir-blaster';
   if (type === 'rgbw') return 'rgbw';
   if (type === 'curtain') return 'curtain';
   if (type === 'media_player' || type === 'audio' || title.includes('speaker') || title.includes('audio')) return 'audio';
@@ -55,6 +57,7 @@ export const getDeviceIconLabel = (device) => {
   const normalizedType = normalizeDeviceType(device);
   if (normalizedType === 'touch-panel') return 'Touch Panel';
   if (normalizedType === 'retro-fit') return 'Retro Fit';
+  if (normalizedType === 'ir-blaster') return 'IR Blaster';
   if (normalizedType === 'rgbw') return 'RGBW Light';
   if (normalizedType === 'curtain') return 'Curtain';
   if (normalizedType === 'audio') return 'Audio Device';

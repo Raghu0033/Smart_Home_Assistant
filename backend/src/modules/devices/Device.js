@@ -55,6 +55,26 @@ const deviceSchema = new mongoose.Schema({
   topic: {
     type: String,
   },
+  receiverDeviceId: {
+    type: String,
+  },
+  irMode: {
+    type: String,
+  },
+  targetTemp: {
+    type: Number,
+  },
+  fanSpeed: {
+    type: String,
+    default: 'auto',
+  },
+  lastIrAction: {
+    type: String,
+  },
+  lastIrCommandAt: {
+    type: Date,
+    default: null,
+  },
   tankCapacity: {
     type: Number,
     min: 1,

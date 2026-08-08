@@ -34,6 +34,8 @@ const DEVICE_COMMANDS = {
   switch: ['turn_on', 'turn_off'],
   plug: ['turn_on', 'turn_off'],
   curtain: ['turn_on', 'turn_off'],
+  'ir-blaster': ['turn_on', 'turn_off'],
+  ir_blaster: ['turn_on', 'turn_off'],
   'touch-panel': ['turn_on', 'turn_off', 'set_speed'],
   'retro-fit': ['turn_on', 'turn_off', 'set_speed'],
   'water-tank': ['turn_on', 'turn_off'],

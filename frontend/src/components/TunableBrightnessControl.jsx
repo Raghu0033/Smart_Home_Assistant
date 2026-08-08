@@ -1,11 +1,11 @@
 const clampPercent = value => Math.min(100, Math.max(0, Math.round(Number(value) || 0)));
 
 const TunableBrightnessControl = ({ brightness, onChange, disabled = false }) => {
-  const percent = clampPercent((Number(brightness) / 255) * 100);
+  const percent = clampPercent(brightness);
 
   const selectPercent = value => {
     if (disabled) return;
-    onChange(Math.round((clampPercent(value) / 100) * 255));
+    onChange(clampPercent(value));
   };
 
   const updateFromPointer = event => {

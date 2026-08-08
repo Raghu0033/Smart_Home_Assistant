@@ -2,18 +2,20 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Settings as SettingsIcon } from 'lucide-react';
 import './Staircase.css';
 
-const TOTAL_STEPS = 24;
+const CHANNELS_PER_NODE = 4;
 
 const Staircase = ({ socket, mqttStatus }) => {
   const [currentState, setCurrentState] = useState('IDLE');
   const [settings, setSettings] = useState({
     maxBrightness: 255,
-    fadeTime: 0.8,
-    stepGap: 0.25,
-    fps: 30,
-    autoOffTimeout: 20
+    fadeTime: 850,
+    fadeStep: (255 * 5) / 850,
+    nodeCount: 1,
+    topSensorDeviceId: '',
+    bottomSensorDeviceId: ''
   });
   const [visData, setVisData] = useState({});
+  const [feedbackNotice, setFeedbackNotice] = useState(null);
 
   useEffect(() => {
     if (!socket) return;
@@ -21,11 +23,16 @@ const Staircase = ({ socket, mqttStatus }) => {
     socket.on('staircase_state_update', (data) => setCurrentState(data.state));
     socket.on('staircase_settings_sync', (data) => setSettings(data));
     socket.on('staircase_vis_update', (data) => setVisData(data));
+    socket.on('staircase_feedback_error', (data) => {
+      setFeedbackNotice({ ...data, id: Date.now() });
+      window.setTimeout(() => setFeedbackNotice(null), 8000);
+    });
 
     return () => {
       socket.off('staircase_state_update');
       socket.off('staircase_settings_sync');
       socket.off('staircase_vis_update');
+      socket.off('staircase_feedback_error');
     };
   }, [socket]);
 
@@ -37,7 +44,7 @@ const Staircase = ({ socket, mqttStatus }) => {
 
   const handleSettingChange = (e) => {
     const { name, value } = e.target;
-    const val = parseFloat(value);
+    const val = name.includes('Sensor') ? value : parseFloat(value);
     
     // Optimistic UI update
     setSettings(prev => ({ ...prev, [name]: val }));
@@ -55,31 +62,38 @@ const Staircase = ({ socket, mqttStatus }) => {
 
   return (
     <div className="staircase-view">
+      {feedbackNotice && <div className="staircase-feedback-error" role="alert">
+        <strong>Staircase feedback error</strong>
+        <span>{feedbackNotice.message}{feedbackNotice.node ? ` (${feedbackNotice.node})` : ''}</span>
+        <button type="button" onClick={() => setFeedbackNotice(null)} aria-label="Dismiss notification">×</button>
+      </div>}
       <div className="staircase-grid">
         {/* LEFT: CONTROLS */}
         <div className="staircase-panel controls-panel">
 
           <h3>Tuning <SettingsIcon size={16} style={{marginLeft: '8px', verticalAlign: 'middle'}}/></h3>
+
+          <div className="staircase-direction-controls" aria-label="Staircase direction controls">
+            <button type="button" className="staircase-direction-button staircase-up" onClick={() => trigger('UP')}>
+              UP
+            </button>
+            <button type="button" className="staircase-direction-button staircase-down" onClick={() => trigger('DOWN')}>
+              DOWN
+            </button>
+            <button type="button" className="staircase-direction-button staircase-emergency" onClick={() => trigger('EMERGENCY_OFF')}>
+              EMERGENCY OFF
+            </button>
+          </div>
+
           <div className="slider-group">
             <label>Max Brightness <span>{settings.maxBrightness}</span></label>
             <input type="range" name="maxBrightness" min="10" max="255" value={settings.maxBrightness} onChange={handleSettingChange} />
           </div>
-          <div className="slider-group">
-            <label>Fade Time (s) <span>{settings.fadeTime}</span></label>
-            <input type="range" name="fadeTime" min="0.1" max="5.0" step="0.1" value={settings.fadeTime} onChange={handleSettingChange} />
-          </div>
-          <div className="slider-group">
-            <label>Step Gap (s) <span>{settings.stepGap}</span></label>
-            <input type="range" name="stepGap" min="0.05" max="3.0" step="0.05" value={settings.stepGap} onChange={handleSettingChange} />
-          </div>
-          <div className="slider-group">
-            <label>FPS <span>{settings.fps}</span></label>
-            <input type="range" name="fps" min="5" max="60" value={settings.fps} onChange={handleSettingChange} />
-          </div>
-          <div className="slider-group">
-            <label>Auto-Off (s) <span>{settings.autoOffTimeout}</span></label>
-            <input type="range" name="autoOffTimeout" min="5" max="120" value={settings.autoOffTimeout} onChange={handleSettingChange} />
-          </div>
+          <div className="staircase-field"><label>Fade time (ms)</label><input type="number" name="fadeTime" min="50" max="10000" value={settings.fadeTime} onChange={handleSettingChange} /></div>
+          <div className="staircase-hint">Firmware fadeStep: {Number(settings.fadeStep || 0).toFixed(2)}</div>
+          <div className="staircase-field"><label>Controller nodes / steps</label><input type="number" name="nodeCount" min="1" max="16" value={settings.nodeCount} onChange={handleSettingChange} /></div>
+          <div className="staircase-field"><label>Top sensor device ID</label><input name="topSensorDeviceId" placeholder="staircase_top" value={settings.topSensorDeviceId} onChange={handleSettingChange} /></div>
+          <div className="staircase-field"><label>Bottom sensor device ID</label><input name="bottomSensorDeviceId" placeholder="e.g. sensor_bottom" value={settings.bottomSensorDeviceId} onChange={handleSettingChange} /></div>
 
         </div>
 
@@ -87,7 +101,7 @@ const Staircase = ({ socket, mqttStatus }) => {
         <div className="staircase-panel">
           <h3>Steps Visualizer</h3>
           <div className="staircase-bars">
-            {Array.from({ length: TOTAL_STEPS }, (_, i) => TOTAL_STEPS - i).map((step) => {
+            {Array.from({ length: settings.nodeCount * CHANNELS_PER_NODE }, (_, i) => settings.nodeCount * CHANNELS_PER_NODE - i).map((step) => {
               const brightness = visData[step] || 0;
               const percent = brightness / 255;
               const width = Math.max(1, percent * 100);

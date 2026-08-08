@@ -35,7 +35,7 @@ const AddDeviceModal = ({ isOpen, onClose, onAdd }) => {
     onClose();
   };
 
-  const icons = ['💡', '🔌', '📊', '🔘', '🌈', '🔆', '🪟', '❄️', '📺', '📹', '🔊', '🌡️', '🔒'];
+  const icons = ['💡', '🔌', '📊', '📡', '🔘', '🌈', '🔆', '🪟', '❄️', '📺', '📹', '🔊', '🌡️', '🔒'];
 
   return (
     <div className="modal-overlay">

@@ -4,6 +4,7 @@ import TouchPanelBacklight from './TouchPanelBacklight';
 
 const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device, socket }) => {
   const API_BASE = `http://${window.location.hostname}:3000`;
+  const isIRBlaster = device?.type === 'ir-blaster';
   const [formData, setFormData] = useState({
     deviceId: '',
     title: '',
@@ -11,6 +12,9 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device, socket }) 
     icon: '💡',
     room: 'Unassigned',
     roomId: '',
+    companyName: 'DAIKIN',
+    model: 'CASSETTE',
+    modelNo: 'BRC91A157',
     subDevices: []
   });
   const [rooms, setRooms] = useState([]);
@@ -24,6 +28,9 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device, socket }) 
         icon: device.icon || '💡',
         room: device.room || 'Unassigned',
         roomId: device.roomId || '',
+        companyName: device.companyName || 'DAIKIN',
+        model: device.model || 'CASSETTE',
+        modelNo: device.modelNo || 'BRC91A157',
         subDevices: device.subDevices || []
       });
     }
@@ -54,7 +61,7 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device, socket }) 
     onClose();
   };
 
-  const icons = ['💡', '🔌', '📊', '🔘', '🌈', '🔆', '🪟', '❄️', '📺', '📹', '🔊', '🌡️', '🔒'];
+  const icons = ['💡', '🔌', '📊', '📡', '🔘', '🌈', '🔆', '🪟', '❄️', '📺', '📹', '🔊', '🌡️', '🔒'];
 
   return (
     <div className="modal-overlay">
@@ -73,7 +80,7 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device, socket }) 
               <span>01</span>
               <div><strong>Device details</strong><small>Name, room and panel identity</small></div>
             </div>
-            <div className="device-identity-grid">
+          <div className="device-identity-grid">
           <div className="form-group">
             <label>Appliance Name</label>
             <input 
@@ -111,6 +118,39 @@ const ConfigureDeviceModal = ({ isOpen, onClose, onConfigure, device, socket }) 
             />
             <small className="field-hint">This must match the ID used by the physical device.</small>
           </div>
+          {isIRBlaster && (
+            <>
+              <div className="form-group">
+                <label>Company Name</label>
+                <select
+                  value={formData.companyName}
+                  onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+                >
+                  <option value="DAIKIN">DAIKIN</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Model</label>
+                <select
+                  value={formData.model}
+                  onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                >
+                  <option value="CASSETTE">CASSETTE</option>
+                  <option value="SPLIT">SPLIT</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Model No</label>
+                <select
+                  value={formData.modelNo}
+                  onChange={(e) => setFormData({ ...formData, modelNo: e.target.value })}
+                >
+                  <option value="BRC91A157">BRC91A157</option>
+                  <option value="ARC484B32">ARC484B32</option>
+                </select>
+              </div>
+            </>
+          )}
           {!isTouchPanel && <div className="form-group">
             <label>Select Appliance Type Icon</label>
             <div className="icon-selector">

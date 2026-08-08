@@ -53,6 +53,37 @@
   --sidebar-collapsed: 80px;
 }
 
+[data-theme="bright"] {
+  color-scheme: light;
+  --primary: #ff7a1a;
+  --primary-dark: #f05a00;
+  --primary-light: #ffc27a;
+  --primary-lighter: #fff3e6;
+  --primary-glow: rgba(255, 122, 26, 0.18);
+  --primary-tint: rgba(255, 122, 26, 0.09);
+  --accent: #3b82f6;
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #dc2626;
+  --bg-main: #fffaf5;
+  --bg-secondary: #fff2e7;
+  --bg-sidebar: linear-gradient(135deg, #ff7a1a 0%, #ffb347 100%);
+  --bg-sidebar-solid: #ff7a1a;
+  --bg-sidebar-hover: rgba(255, 255, 255, 0.16);
+  --bg-sidebar-active: rgba(255, 255, 255, 0.28);
+  --bg-card: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 248, 240, 0.95) 100%);
+  --bg-elevated: rgba(255, 255, 255, 0.98);
+  --text-main: #2b1708;
+  --text-secondary: #5e3819;
+  --text-muted: #8a5f2f;
+  --border: rgba(255, 122, 26, 0.16);
+  --border-strong: rgba(255, 122, 26, 0.26);
+  --shadow-deep: 0 18px 46px -20px rgba(255, 122, 26, 0.3);
+  --shadow-soft: 0 8px 24px -12px rgba(255, 122, 26, 0.2);
+  --shadow-sm: 0 3px 10px rgba(255, 122, 26, 0.12);
+  --shadow-card: 0 10px 32px rgba(255, 122, 26, 0.08), 0 2px 8px rgba(15, 23, 42, 0.03);
+}
+
 [data-theme="dark"] {
   color-scheme: dark;
   --primary: #fb923c;
@@ -94,11 +125,13 @@
 
 body {
   background-color: var(--bg-main);
+  background-image: radial-gradient(circle at top left, var(--primary-tint), transparent 34%), linear-gradient(135deg, rgba(255,255,255,0.18), transparent 70%);
   color: var(--text-main);
   min-height: 100vh;
   overflow-x: hidden;
   line-height: 1.5;
   font-size: 14px;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 input,
@@ -214,10 +247,18 @@ textarea:focus {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-card);
   border-radius: var(--radius-md);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.glass:hover,
+.glass-light:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-deep);
+  border-color: var(--border-strong);
 }
 
 .glass-light {
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.68);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border);
@@ -801,14 +842,16 @@ button:active {
 /* Grid Layouts */
 .rooms-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 20px;
+  align-items: stretch;
 }
 
 .devices-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 18px;
+  align-items: stretch;
 }
 
 /* Room Cards */
@@ -1278,12 +1321,23 @@ html[data-theme="light"] .device-card .icon-box:has(.retro-fit-icon) {
   max-width: 1100px;
 }
 
+.ir-blaster-detail-view .detail-main-grid {
+  max-width: 1100px;
+}
+
 .control-section-group { display: flex; flex-direction: column; gap: 24px; }
 .detail-side-column { display: flex; flex-direction: column; gap: 24px; }
 
 .control-card.glass {
   padding: 24px;
   border-radius: var(--radius-lg);
+}
+
+.ir-blaster-panel-card.control-card.glass {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Keep RGBW sections independent on both desktop and mobile. */
@@ -3390,6 +3444,7 @@ html[data-theme="light"] .device-card .icon-box:has(.retro-fit-icon) {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-height: 286px;
  }
 .device-card:hover,
 .device-card:focus-visible {
@@ -5718,7 +5773,8 @@ html[data-theme="light"] .device-card .icon-box:has(.retro-fit-icon) {
     width: min(100%, 285px);
     max-width: 285px;
     min-width: 0;
-    aspect-ratio: 1;
+    aspect-ratio: auto;
+    min-height: 285px;
     justify-self: center;
     padding: 16px;
   }
@@ -5925,6 +5981,7 @@ html[data-theme="light"] .device-card .icon-box:has(.retro-fit-icon) {
     min-width: 0;
     grid-template-columns: minmax(0, 1fr);
     justify-items: center;
+    gap: 16px;
   }
 
   .room-card-wrapper {
@@ -5937,14 +5994,16 @@ html[data-theme="light"] .device-card .icon-box:has(.retro-fit-icon) {
     width: min(100%, 285px);
     max-width: 285px;
     min-width: 0;
-    aspect-ratio: 1;
+    aspect-ratio: auto;
+    min-height: 285px;
   }
 
   .devices-grid > .device-card {
-    width: min(100%, 285px);
-    max-width: 285px;
+    width: min(100%, 100%);
+    max-width: 360px;
     min-width: 0;
-    aspect-ratio: 1;
+    aspect-ratio: auto;
+    min-height: 285px;
     justify-self: center;
     justify-content: space-between;
     gap: 0;

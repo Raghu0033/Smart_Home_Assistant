@@ -115,6 +115,46 @@
   letter-spacing: 0.05em;
 }
 
+.staircase-direction-controls {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.staircase-direction-button {
+  flex: 1;
+  border: 0;
+  border-radius: var(--radius-md, 10px);
+  padding: 0.85rem 1rem;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.staircase-direction-button:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.staircase-direction-button:active {
+  transform: translateY(0);
+}
+
+.staircase-up {
+  background: #059669;
+}
+
+.staircase-down {
+  background: #2563eb;
+}
+
+.staircase-emergency {
+  flex-basis: 100%;
+  background: #dc2626;
+}
+
 /* Steps Visualizer */
 .staircase-bars {
   flex: 1;
@@ -251,6 +291,14 @@
   width: 100%;
   accent-color: var(--primary);
 }
+
+.staircase-field { margin-bottom: 1rem; }
+.staircase-field label { display: block; margin-bottom: .45rem; color: var(--text-muted); font-size: .9rem; font-weight: 500; }
+.staircase-field input { width: 100%; box-sizing: border-box; padding: .7rem .8rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-main); color: var(--text-main); }
+.staircase-hint { margin: -.45rem 0 1rem; color: var(--text-muted); font-size: .78rem; }
+.staircase-feedback-error { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; padding: .85rem 1rem; border: 1px solid rgba(239,68,68,.35); border-radius: var(--radius-md, 10px); background: rgba(239,68,68,.1); color: #dc2626; }
+.staircase-feedback-error span { flex: 1; }
+.staircase-feedback-error button { border: 0; background: transparent; color: inherit; font-size: 1.25rem; cursor: pointer; }
 
 @media (max-width: 768px) {
   .staircase-header {

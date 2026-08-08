@@ -65,6 +65,7 @@ import MusicDeck from './components/MusicDeck';
 import Staircase from './components/Staircase';
 import MusicHome from './components/MusicHome';
 import AudioDevicesTab from './components/AudioDevicesTab';
+import IRBlasterPanel from './components/IRBlasterPanel';
 import { getDefaultDeviceIconSrc, getDeviceIconLabel, getDeviceIconSrc, getDeviceIconText } from './deviceIcons';
 import Surveillance from './components/Surveillance';
 import WaterTanksPage from './components/WaterTanksPage';
@@ -1172,13 +1173,13 @@ const Dashboard = () => {
         const mappedDevice = {
           deviceId: haDevice.entity_id,
           title: haDevice.name,
-          type: haDevice.type === 'switch' ? 'plug' : haDevice.type, // UI expects plug/light/rgbw/curtain
+          type: haDevice.type === 'switch' ? 'plug' : haDevice.type === 'remote' ? 'ir-blaster' : haDevice.type, // UI expects plug/light/rgbw/curtain/ir-blaster
           room: haDevice.room || 'Unassigned', // Dynamically map HA Room
           isOnline: haDevice.state !== 'unavailable' && haDevice.state !== 'unknown',
           on: haDevice.on,
           // HA mapper provides brightness 0-100, UI internal state expects 0-255
           brightness: haDevice.brightness !== undefined ? Math.round((haDevice.brightness / 100) * 255) : 255,
-          icon: haDevice.type === 'light' ? '💡' : (haDevice.type === 'media_player' ? '🎵' : '🔌'),
+          icon: haDevice.type === 'light' ? '💡' : (haDevice.type === 'media_player' ? '🎵' : haDevice.type === 'remote' ? '📡' : '🔌'),
           isConfigured: true,
           isHomeAssistant: true,
           mediaState: haDevice.state,
@@ -1323,7 +1324,7 @@ const Dashboard = () => {
     const isRgbw = selectedDevice?.type === 'rgbw';
     const isTunable = selectedDevice && (selectedDevice.type === 'tunable-light' || selectedDevice.type === 'tune light');
     if (isRgbw || isTunable) {
-      const nextBrightness = val ? 128 : 0;
+      const nextBrightness = val ? (isTunable ? 50 : 128) : 0;
       const optimisticDevice = { ...selectedDevice, on: val, brightness: nextBrightness };
       setBrightness(nextBrightness);
       setSelectedDevice(optimisticDevice);
@@ -1505,6 +1506,7 @@ const Dashboard = () => {
   const renderDetailView = () => {
     if (!selectedDevice) return null;
 
+    const isIRBlaster = selectedDevice.type === 'ir-blaster' || selectedDevice.type === 'ir_blaster';
     const isLight = selectedDevice.type === 'light' || selectedDevice.type === 'rgbw' || selectedDevice.type === 'tunable-light' || selectedDevice.type === 'tune light';
     const isTunableLight = selectedDevice.type === 'tunable-light' || selectedDevice.type === 'tune light';
     const isRoomSwitchCollection = selectedDevice.type === 'room-switches';
@@ -1837,9 +1839,97 @@ const Dashboard = () => {
         )}
       </div>
     );
+    const handleIRBlasterCommand = async (nextState, meta) => {
+      const authToken = String(profile?.phone || '').trim();
+      if (!authToken) {
+        showToast('Phone number is required to use IR controls');
+        return;
+      }
+
+      const optimisticDevice = {
+        ...selectedDevice,
+        on: nextState.power,
+        irMode: nextState.mode,
+        targetTemp: nextState.temp,
+        fanSpeed: nextState.fan,
+        companyName: nextState.companyName,
+        model: nextState.model,
+        modelNo: nextState.modelNo,
+        receiverDeviceId: nextState.deviceId,
+        lastIrAction: meta.actionLabel
+      };
+      setSelectedDevice(optimisticDevice);
+      setDevices(previous => (Array.isArray(previous) ? previous : []).map(device =>
+        device.deviceId === optimisticDevice.deviceId ? { ...device, ...optimisticDevice } : device
+      ));
+      try {
+        const payload = {
+          uidNo: authToken,
+          deviceId: nextState.deviceId,
+          cmdType: meta.cmdType,
+          companyName: nextState.companyName,
+          model: nextState.model,
+          modelNo: nextState.modelNo
+        };
+        console.log('[IR Blaster] API payload', payload);
+        console.log('[IR Blaster] API request', {
+          url: 'https://receiver.bharatsmr.com/api/ir/cmd',
+          method: 'POST',
+          payload
+        });
+        const response = await fetch('https://receiver.bharatsmr.com/api/ir/cmd', {
+          method: 'POST',
+          headers: {
+            accesstoken: authToken,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json().catch(() => null);
+        console.log('[IR Blaster] API response', {
+          url: 'https://receiver.bharatsmr.com/api/ir/cmd',
+          method: 'POST',
+          status: response.status,
+          body: result
+        });
+        if (!response.ok) {
+          const message = result?.message || `IR receiver request failed with ${response.status}`;
+          showToast(`IR command failed: ${message}`);
+          throw new Error(message);
+        }
+
+        try {
+          await fetchWithAuth(`${API_BASE}/api/devices/${optimisticDevice.deviceId}/state`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              on: nextState.power,
+              irMode: nextState.mode,
+              targetTemp: nextState.temp,
+              fanSpeed: nextState.fan,
+              receiverDeviceId: nextState.deviceId,
+              lastIrAction: meta.actionLabel
+            })
+          });
+        } catch (dbError) {
+          console.error('[IR Blaster] Failed to persist device state', dbError);
+        }
+
+        showToast(meta.actionLabel);
+      } catch (error) {
+        console.error('[IR Blaster] API error', {
+          url: 'https://receiver.bharatsmr.com/api/ir/cmd',
+          method: 'POST',
+          error
+        });
+        showToast(error?.message || 'IR command failed');
+      }
+    };
 
     return (
-      <div className={`detail-view animate-slide-up ${usesPlugMobileLayout ? 'plug-detail-view' : ''} ${selectedDevice.type === 'rgbw' || isTunableLight ? 'rgbw-detail-view' : ''} ${isTunableLight ? 'tunable-light-detail-view' : ''} ${isRoomSwitchCollection ? 'room-switches-detail' : ''} ${isTouchPanel && !isRoomSwitchCollection ? 'individual-touch-panel-detail' : ''}`}>
+      <div className={`detail-view animate-slide-up ${usesPlugMobileLayout ? 'plug-detail-view' : ''} ${selectedDevice.type === 'rgbw' || isTunableLight ? 'rgbw-detail-view' : ''} ${isTunableLight ? 'tunable-light-detail-view' : ''} ${isRoomSwitchCollection ? 'room-switches-detail' : ''} ${isTouchPanel && !isRoomSwitchCollection ? 'individual-touch-panel-detail' : ''} ${isIRBlaster ? 'ir-blaster-detail-view' : ''}`}>
         <header className="detail-header" style={{ marginBottom: '16px' }}>
           <div className="title-row">
             <div className={`title-left ${deviceNameLength > 14 ? 'device-title-layout-long' : ''}`}>
@@ -1944,6 +2034,12 @@ const Dashboard = () => {
             <div className="control-section-group">
               {/* If it's a pure monitor, show metrics in the main column */}
               {(isThreePhase || isSinglePhase) && renderEnergyMetrics()}
+
+              {isIRBlaster && (
+                <div className="control-card glass ir-blaster-panel-card">
+                  <IRBlasterPanel device={selectedDevice} onCommand={handleIRBlasterCommand} />
+                </div>
+              )}
 
               {/* Specialized Header for Lights with Power/Auto toggle */}
               {isLight && (

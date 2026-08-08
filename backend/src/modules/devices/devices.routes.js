@@ -46,6 +46,38 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Update device runtime state (IR blaster persistence, on/off, etc.)
+router.patch('/:deviceId/state', async (req, res) => {
+  const { on, irMode, targetTemp, fanSpeed, receiverDeviceId, lastIrAction } = req.body;
+  const update = {};
+
+  if (on !== undefined) update.on = on;
+  if (irMode !== undefined) update.irMode = irMode;
+  if (targetTemp !== undefined) update.targetTemp = targetTemp;
+  if (fanSpeed !== undefined) update.fanSpeed = fanSpeed;
+  if (receiverDeviceId !== undefined) update.receiverDeviceId = receiverDeviceId;
+  if (lastIrAction !== undefined) update.lastIrAction = lastIrAction;
+
+  if (Object.keys(update).length === 0) {
+    return res.status(400).json({ message: 'No state fields provided' });
+  }
+
+  update.lastIrCommandAt = new Date();
+
+  try {
+    const updatedDevice = await Device.findOneAndUpdate(
+      { deviceId: req.params.deviceId },
+      { $set: update },
+      { new: true }
+    );
+
+    if (!updatedDevice) return res.status(404).json({ message: 'Device not found' });
+    res.json(updatedDevice);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // Add a new device
 router.post('/', async (req, res) => {
   const { deviceId, title, type, icon, room, roomId, subDevices, tankCapacity } = req.body;

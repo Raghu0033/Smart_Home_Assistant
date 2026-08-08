@@ -105,7 +105,11 @@ router.put('/me', authMiddleware, loadUser, async (req, res) => {
   try {
     const user = req.profileUser;
     if (req.body.name !== undefined) user.name = String(req.body.name).trim();
-    if (req.body.phone !== undefined) user.phone = String(req.body.phone).trim() || undefined;
+    if (req.body.phone !== undefined) {
+      const phone = String(req.body.phone).trim();
+      if (!phone) return res.status(400).json({ message: 'Phone number is required' });
+      user.phone = phone;
+    }
     if (req.body.gender !== undefined) user.gender = req.body.gender;
     if (req.body.avatar !== undefined) user.avatar = String(req.body.avatar).trim() || 'avatar-1';
     await user.save();
@@ -138,10 +142,12 @@ router.get('/members', authMiddleware, loadUser, requireAdmin, async (req, res) 
 router.post('/members', authMiddleware, loadUser, requireAdmin, async (req, res) => {
   try {
     const isKid = Boolean(req.body.permanentChild);
+    const phone = String(req.body.phone || '').trim();
+    if (!phone) return res.status(400).json({ message: 'Phone number is required' });
     const member = await User.create({
       name: String(req.body.name || '').trim(),
       username: String(req.body.username || '').trim(),
-      phone: String(req.body.phone || '').trim() || undefined,
+      phone,
       password: req.body.password,
       gender: req.body.gender || 'prefer-not-to-say',
       avatar: String(req.body.avatar || 'avatar-1').trim(),
@@ -167,10 +173,14 @@ router.put('/members/:id', authMiddleware, loadUser, requireAdmin, async (req, r
   try {
     const member = await User.findById(req.params.id);
     if (!member || member.role === 'admin') return res.status(404).json({ message: 'Household member not found' });
-    ['name', 'phone', 'avatar'].forEach(field => {
+    if (req.body.phone !== undefined) {
+      const phone = String(req.body.phone).trim();
+      if (!phone) return res.status(400).json({ message: 'Phone number is required' });
+      member.phone = phone;
+    }
+    ['name', 'avatar'].forEach(field => {
       if (req.body[field] !== undefined) member[field] = String(req.body[field]).trim();
     });
-    if (!member.phone) member.phone = undefined;
     if (req.body.gender !== undefined) member.gender = req.body.gender;
     if (req.body.permanentChild !== undefined) {
       member.permanentChild = Boolean(req.body.permanentChild);

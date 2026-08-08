@@ -620,7 +620,7 @@ export const initSocket = (io, mqttClient) => {
         case 'brightness_change':
           return isRgbwTopic
             ? { type: 'brightness', value: Math.min(255, Math.max(0, Math.round(Number(data.brightness) || 0))) }
-            : { type: 'brightness', value: Math.round((data.brightness / 255) * 100) };
+            : { type: 'brightness', value: Math.min(100, Math.max(0, Math.round(Number(data.brightness) || 0))) };
         case 'white_change':
           return { type: 'colour', colour: [data.r || 0, data.g || 0, data.b || 0, data.white] };
         case 'set_effect':
@@ -772,7 +772,7 @@ export const initSocket = (io, mqttClient) => {
       const device = await Device.findOne({ deviceId });
       if (!device) return;
 
-      const topic = `touch-panel/${deviceId}/switch/command`;
+      const topic = `node-switch/${deviceId}/switch/command`;
       const mqttPayload = { 
         type: 'switch',
         value: String(action)

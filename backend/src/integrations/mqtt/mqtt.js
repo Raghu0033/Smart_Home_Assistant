@@ -8,7 +8,7 @@ import WaterLevelConfig from '../../modules/devices/WaterLevelConfig.js';
 import { publishStateToHA, syncAllDevicesToHA, handleHomeAssistantCommand, publishSensorStateToHA } from '../homeassistant/ha-discovery.js';
 import { callService, cachedHaStates } from '../homeassistant/ha-client.js';
 import { handlePresenceChange } from '../../modules/audio/followMeAudio.js';
-import { handleTrigger } from '../../modules/staircase/staircaseService.js';
+import { handleTrigger, handleStaircaseFeedback, handleStaircaseSensor } from '../../modules/staircase/staircaseService.js';
 import { escapeRegExp } from './topicUtils.js';
 import { resolveTouchPanelState } from '../../modules/devices/touchPanelCommandGuard.js';
 import { notifyTouchPanelPower, notifyTouchPanelSpeed } from '../../modules/devices/touchPanelStatusWaiter.js';
@@ -74,6 +74,7 @@ export const connectMQTT = (io) => {
       'node-switch/+/backlight/status',
       'node-switch/+/ping/status',
       'node-switch/+/#',
+      'smart_home/+/ping/status',
       'smart_home/rgbw/+/status',
       'smart_home/rgbw/+/debug',
       'rgbw-light/+/light/status',
@@ -81,6 +82,13 @@ export const connectMQTT = (io) => {
       'rgbw-light/+/#',
       'smarthome/ha/+/command',
       'smart_home/staircase/trigger',
+      'smart_home/staircase/node1/status',
+      'smart_home/staircase/node2/status',
+      'smart_home/staircase/node3/status',
+      'smart_home/staircase/node4/status',
+      'smart_home/staircase/node5/status',
+      'smart_home/staircase/node6/status',
+      'SMARTHOME/PIR/+',
       'tunable-light/+/light/status',
       'tunable-light/+/status',
       'tunable-light/+/#',
@@ -189,6 +197,13 @@ export const connectMQTT = (io) => {
         }
       }
       return;
+    } else if (topic.startsWith('SMARTHOME/PIR/')) {
+      const sensorId = topic.slice('SMARTHOME/PIR/'.length);
+      handleStaircaseSensor(sensorId, payload);
+      return;
+    } else if (topic.startsWith('smart_home/staircase/node') && topic.endsWith('/status')) {
+      handleStaircaseFeedback(topic, payload);
+      return;
     } else if (topic === 'smart_home/staircase/trigger') {
       let data = null;
       try { data = JSON.parse(payload); } catch (e) { data = payload; }
@@ -218,6 +233,8 @@ export const connectMQTT = (io) => {
     } else if (topic === 'energy-meter/three-phase' || topic === 'energy-meter/single-phase') {
       deviceId = data.DeviceID;
     } else if (topicParts[0] === 'touch-panel' || topicParts[0] === 'node-switch') {
+      deviceId = topicParts[1];
+    } else if (topicParts[0] === 'smart_home' && topicParts[2] === 'ping' && topicParts[3] === 'status') {
       deviceId = topicParts[1];
     } else if (topicParts[0] === 'smart_home' && topicParts[1] === 'rgbw') {
       deviceId = topicParts[2];
@@ -257,9 +274,10 @@ export const connectMQTT = (io) => {
         }
 
         if (Number.isFinite(rawVal)) {
+          // Tunable-light MQTT brightness is already reported on a 0-100 scale.
           const pct = Math.min(100, Math.max(0, rawVal));
-          data.brightness = Math.round((pct / 100) * 255);
-          data.on = pct > 0;
+          data.brightness = pct;
+          data.on = data.brightness > 0;
           data.brightnessReportedAt = new Date();
           console.log(`[TUNABLE LIGHT] ${deviceId}: ${pct}% -> ${data.on ? 'ON' : 'OFF'}`);
         }

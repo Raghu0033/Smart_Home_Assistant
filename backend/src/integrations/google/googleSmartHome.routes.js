@@ -232,7 +232,7 @@ app.onExecute(async (body, headers) => {
 
           // SPECIAL HANDLING FOR CURTAINS
           if (device.type === 'curtain') {
-            const topic = getPanelCommandTopic(device);
+            const topic = `node-switch/${device.deviceId}/switch/command`;
             let curtainValue = '10'; // Default to stop/off
 
             if (commandType === 'action.devices.commands.OpenClose') {
